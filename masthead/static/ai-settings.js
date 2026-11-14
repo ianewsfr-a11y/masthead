@@ -88,7 +88,9 @@
     const select = M.h('select', { id: `${prefix}-provider` },
       ...(listed ? [] : [M.h('option', { value: current.provider, disabled: true, selected: true }, `${current.provider} (set outside MastHead)`)]),
       ...providers.map((p) => M.h('option', { value: p.id, selected: p.id === current.provider }, p.label)));
-    const model = M.h('input', { type: 'text', id: `${prefix}-model`, autocomplete: 'off', class: 'mono', value: current.model || '' });
+    const model = M.h('input', {
+      type: 'text', id: `${prefix}-model`, autocomplete: 'off', class: 'mono', required: true, value: current.model || '',
+    });
     const example = M.h('span', { class: 'help' });
     const address = M.h('input', { type: 'text', id: `${prefix}-address`, autocomplete: 'off', class: 'mono', value: current.base_url || '' });
     const addressHelp = M.h('span', { class: 'help' });
@@ -98,9 +100,9 @@
     function update(initial) {
       const p = chosen();
       if (!p) return;
-      example.textContent = `For example ${p.example_model} (Horizon's example). Write the name exactly as your provider does.`;
+      example.textContent = `Horizon's default for ${p.label} is ${p.example_model}. Check that your provider still offers it, or type another name exactly as your provider writes it.`;
       if (!initial) {
-        model.value = '';
+        model.value = p.example_model || '';
         address.value = p.id === 'ollama' ? p.base_url : '';
         version.value = p.api_version || '';
       }

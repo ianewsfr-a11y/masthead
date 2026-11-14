@@ -197,6 +197,15 @@ def test_invalid_choices_are_refused(client, body):
     assert get_domain("flight-sim").config_path.read_bytes() == before
 
 
+def test_an_empty_model_is_refused_with_horizons_example(client):
+    from src.models import AI_PROVIDER_DEFAULTS, AIProvider
+
+    response = client.post("/api/domains/flight-sim/model", json={"provider": "gemini", "model": ""})
+    assert response.status_code == 400
+    message = response.json()["error"]
+    assert "Google Gemini" in message and AI_PROVIDER_DEFAULTS[AIProvider.GEMINI]["model"] in message
+
+
 def test_a_new_domain_can_use_another_provider(client):
     response = client.post("/api/new-domain", json={
         "id": "boating", "name": "Boating", "languages": ["en"], "copy_from": "flight-sim",

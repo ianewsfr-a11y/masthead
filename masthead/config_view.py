@@ -208,8 +208,13 @@ def ai_choice(ai: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
     if info is None:
         raise DomainError("Choose one of the providers listed.")
     model = body.get("model")
-    if not isinstance(model, str) or not model.strip() or len(model.strip()) > 200:
-        raise DomainError("Give the model name, as your provider writes it.")
+    if not isinstance(model, str) or not model.strip():
+        raise DomainError(
+            f"Type the name of a {info['label']} model in the Model field, "
+            f"for example {info['example_model']} (Horizon's default)."
+        )
+    if len(model.strip()) > 200:
+        raise DomainError("The model name is longer than 200 characters.")
 
     result = dict(ai)
     changed = result.get("provider") != provider_id
