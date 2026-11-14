@@ -1,13 +1,18 @@
-"""The local HTTP server: a JSON API over MastHeadService, and the static interface.
+"""The HTTP server: a JSON API over MastHeadService, and the static interface.
 
-It listens on the loopback address only. Requests that do not come from the
-local interface itself are refused, so a web page open in the same browser
-cannot start a run or read a briefing.
+Local mode (the default) listens on the loopback address only, and refuses
+requests that do not come from the local interface itself, so a web page open
+in the same browser cannot start a run or read a briefing.
+
+Server mode (see web_auth) answers on one configured host name behind an HTTPS
+proxy, and needs a signed-in session for everything but sign-in and /healthz.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -19,38 +24,56 @@ from src.mcp.errors import HorizonMcpError
 from . import __version__
 from . import config_view
 from .domains import DomainError, get_domain, list_domains
+from .env import DomainEnvironment
 from .runner import RunManager, failed_source_count
+from .schedule import Scheduler, parse_schedule
 from .service import MastHeadService
+from .web_auth import STATIC, ServerConfigError, ServerGuard, ServerSettings, local_refusal
 
-STATIC = Path(__file__).resolve().parent / "static"
-LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
-
-
-def _host_only(value: str) -> str:
-    value = value.strip().lower()
-    if value.startswith("["):
-        return value.split("]")[0] + "]"
-    return value.split(":")[0]
+__all__ = ["create_app", "ServerConfigError", "ServerSettings"]
 
 
-def create_app(client_factory=None) -> FastAPI:
-    app = FastAPI(title="MastHead", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
-    manager = RunManager()
-    app.state.manager = manager
+def create_app(client_factory=None, server: ServerSettings | None = None) -> FastAPI:
+    guard = ServerGuard(server) if server is not None else None  # refuses to build without a password
+    mode = "server" if guard else "local"
+    env = DomainEnvironment()
+    manager = RunManager(env=env)
 
     def service_for(domain_id: str) -> MastHeadService:
         return MastHeadService(get_domain(domain_id), client_factory=client_factory)
 
+    def start_full_run(domain_id: str) -> dict[str, Any]:
+        service = service_for(domain_id)
+        return manager.start(service, hours=service.context().config.collection.time_window_hours, until="full")
+
+    scheduler = Scheduler(start_run=start_full_run)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        task = asyncio.create_task(scheduler.run_forever())
+        try:
+            yield
+        finally:
+            task.cancel()
+
+    app = FastAPI(title="MastHead", version=__version__, docs_url=None, redoc_url=None, openapi_url=None,
+                  lifespan=lifespan)
+    app.state.manager = manager
+    app.state.scheduler = scheduler
+    app.state.guard = guard
+
+    def schedule_view(domain_id: str) -> dict[str, Any]:
+        view = scheduler.status(domain_id, datetime.now(timezone.utc))
+        last = view.get("last") or {}
+        job = manager.jobs.get(last.get("job_id") or "")
+        if job:  # the scheduled run's own result, while this server process knows it
+            last.update(run_status=job["status"], run_id=job["run_id"], error=job["error"])
+        return view
+
     @app.middleware("http")
-    async def local_only(request: Request, call_next):
-        if _host_only(request.headers.get("host", "")) not in LOCAL_HOSTS:
-            return JSONResponse({"error": "MastHead only answers on this computer."}, status_code=403)
-        origin = request.headers.get("origin")
-        if origin and _host_only(origin.split("://", 1)[-1]) not in LOCAL_HOSTS:
-            return JSONResponse({"error": "Cross-site requests are refused."}, status_code=403)
-        if request.method not in ("GET", "HEAD") and "application/json" not in request.headers.get("content-type", ""):
-            return JSONResponse({"error": "Requests that change something must be JSON."}, status_code=415)
-        response = await call_next(request)
+    async def gate(request: Request, call_next):
+        refusal = guard.refusal(request) if guard else local_refusal(request)
+        response = refusal if refusal is not None else await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = (
@@ -75,6 +98,19 @@ def create_app(client_factory=None) -> FastAPI:
     @app.exception_handler(ValueError)
     async def value_error(_: Request, exc: ValueError):
         return JSONResponse({"error": str(exc)}, status_code=400)
+
+    # -- health and session ------------------------------------------------
+
+    @app.get("/healthz")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/api/session")
+    async def session(request: Request) -> dict[str, Any]:
+        return {"mode": mode, "signed_in": guard.signed_in(request) if guard else True}
+
+    if guard:
+        guard.install_routes(app)
 
     # -- domains -----------------------------------------------------------
 
@@ -107,16 +143,36 @@ def create_app(client_factory=None) -> FastAPI:
         service = MastHeadService(domain, client_factory=client_factory)
         check = await service.validate_config(horizon_path=service.workspace)
         ctx = service.context()
+        # Horizon checks the process environment; the domain's own .env counts too.
+        missing = [name for name in check["missing_env"] if not env.is_available(domain, name)]
+        warnings = [
+            text for text in check["warnings"]
+            if not (text.startswith("GITHUB_TOKEN ") and env.is_available(domain, "GITHUB_TOKEN"))
+        ]
+        key_available = env.is_available(domain, ctx.config.ai.api_key_env)
         return {
             "id": domain.id,
             "name": domain.name,
             "description": domain.meta().get("description"),
             "folder": str(domain.path),
             "sources": config_view.sources_view(domain, ctx.config),
-            "settings": config_view.settings_view(domain, service),
-            "missing_env": check["missing_env"],
-            "warnings": check["warnings"],
+            "settings": config_view.settings_view(domain, service, key_available),
+            "missing_env": missing,
+            "warnings": warnings,
+            "schedule": schedule_view(domain.id),
         }
+
+    @app.post("/api/domains/{domain_id}/schedule")
+    async def save_schedule(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        domain = get_domain(domain_id)
+        meta = domain.meta()
+        if body.get("remove") is True:
+            meta.pop("schedule", None)
+        else:
+            meta["schedule"] = parse_schedule(body).as_dict()
+        domain.write_meta(meta)
+        scheduler.forget(domain_id)
+        return await domain_overview(domain_id)
 
     @app.post("/api/domains/{domain_id}/sources")
     async def toggle_source(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:

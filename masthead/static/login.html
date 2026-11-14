@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · MastHead for Horizon</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-page">
+<main class="login" id="main">
+  <div class="brand">
+    <svg role="img" aria-label="MastHead" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="#0B0E14" stroke="#263043"></circle><circle cx="17" cy="20" r="6" fill="#F2A93B"></circle><rect x="2" y="20" width="30" height="13" fill="#0B0E14"></rect><path d="M3 20h28" stroke="#F2A93B" stroke-width="2"></path></svg>
+    <div class="brand-text"><span class="brand-name">MastHead</span><span class="brand-sub">for Horizon</span></div>
+  </div>
+  <h1>Sign in</h1>
+  <form id="login-form" class="login-form" novalidate>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+    <p id="login-error" class="login-error" role="alert" hidden></p>
+    <button type="submit" class="btn primary">Sign in</button>
+  </form>
+</main>
+<script src="/static/login.js"></script>
+</body>
+</html>

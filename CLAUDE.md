@@ -33,7 +33,13 @@ Ambition set by the owner: be the reference interface of its kind.
 - `masthead/runner.py`: runs the pipeline stage by stage in the background (collect, score, select, write, briefing), one run at a time, with token usage per stage.
 - `masthead/config_view.py`: reads and edits the config file as written (so `${ENV}` placeholders survive), validated by Horizon's own model, with a `.bak` copy.
 - `masthead/domains.py`: domains live in `~/.masthead/domains/<id>/` (`MASTHEAD_HOME` overrides). Starter template in `masthead/templates/flight-sim/`.
-- `masthead/server.py`: JSON API and static files. Loopback only; refuses foreign Host and Origin headers; strict Content-Security-Policy (no inline styles or scripts).
+- `masthead/server.py`: JSON API and static files. Strict Content-Security-Policy (no inline styles or scripts). Local mode: loopback only, refuses foreign Host and Origin headers. Server mode: see `web_auth.py`.
+- `masthead/web_auth.py`: the local guard, and the server mode guard (one public host name, same-site `Origin` on every change, session required except for sign-in and `/healthz`) with the sign-in and sign-out routes.
+- `masthead/auth.py`: scrypt password hash (`auth.json` in the home folder, or `MASTHEAD_PASSWORD_HASH`), sessions in memory tied to the password, sign-in limiter.
+- `masthead/env.py`: applies one domain's `.env` when its run starts, after removing the previous domain's values. `MastHeadService._build_context` skips Horizon's own `.env` loader.
+- `masthead/schedule.py`: daily scheduled runs per domain (`schedule` in `domain.json`), last outcome in `data/masthead_schedule.json`.
+- `masthead/tls.py`: certificates checked against the system store (truststore).
+- `Dockerfile` (stages `app` and `test`), `docker-compose.yml` (MastHead + Caddy on a private network), `Caddyfile` (HTTPS, HSTS).
 - `masthead/demo.py`: a run of invented stories, every title starting with `[Demo]`, pushed through Horizon's real selection.
 - `masthead/cli.py`: `masthead` (serve), `masthead import`, `masthead demo`, `masthead domains`.
 
@@ -45,6 +51,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest
 .venv\Scripts\masthead demo
 .venv\Scripts\masthead
+docker build --target test -t masthead:test . ; docker run --rm masthead:test   # whole suite on Linux
 ```
 
 ## Rules for the interface
@@ -68,10 +75,11 @@ python -m venv .venv
 ## Known machine traps
 
 - HTTPS inspection by an antivirus (Norton Web/Mail Shield on the owner's PC) or a company proxy re-signs connections with a root that only the system store trusts. Python's certifi rejects it: every feed and the model API fail with `CERTIFICATE_VERIFY_FAILED`. MastHead injects `truststore` at startup (`masthead/tls.py`) so verification uses the system store. Verification is never turned off.
+- Norton also intercepts traffic from Docker containers on that PC. Building the image there needs its root as a build secret (`docker build --secret id=extra_ca,src=<root.pem>`), never stored in the image. With pip, one PyPI download through Norton failed every time (`ChunkedEncodingError`); the build uses uv, which works. Running the container on that PC also needs the root: mount a bundle and set `SSL_CERT_FILE` (local override only, not in the repository). None of this applies on a server without HTTPS inspection.
 
 ## State of the prototype
 
-Covered by tests (`tests/`, 13 tests, no network and no model needed): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged.
+Covered by tests (`tests/`, 62 tests, no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store (Windows, and Linux in the container), failed feeds counted, runs with failed sources flagged, per-domain `.env`, server mode (refusal to start, sign-in, cookie, sign-out, password change, cross-site and foreign host, rate limit, no secret or article text in logs), scheduled runs (time zones, daylight saving, pause, skip while busy, API).
 
 First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
 
@@ -79,9 +87,25 @@ First real run, 14 November 2026, owner's virtual-flight config imported as doma
 - Full run: 41 scored, 9 at or above 6.5, 5 after merging, 5 kept and written, briefings in 3 languages. 232,477 input and 58,065 output tokens (score 57,343/24,023; merge 1,772/370; write 173,362/33,672). 3 min 22 s.
 - Writing is about three quarters of the input tokens (173,362 of 232,477), and it is multiplied by the number of languages: each kept story is written once per language. The cost estimate (roadmap step 5) must account for this.
 
+Server mode, checked on 14 November 2026 on the owner's PC with Docker (Caddy with a local certificate for `localhost`, ports 8080/8443):
+
+- Whole test suite passes on Linux in the container (62 tests, including the system certificate store test and the auth.json file mode) and on Windows (60, the two Linux-only tests skipped).
+- A security review of the branch found no critical issue. Fixed after it: sign-in attempts counted before the password check and at most two scrypt checks at once (parallel sign-ins could exhaust memory); an address that signed in recently is not held by the overall limit (strangers could lock the owner out); Host and Origin must match the public port too; JSON content type matched exactly; security headers on refusals; sign-out clears the cookie even after the session ended; auth.json created owner-only; expired sessions purged; Compose limits (memory, processes), read-only file system, no capabilities; Caddy body limit 1 MB.
+- Read-only file system: collection works and writes outside `/data` and `/tmp` are refused. A full run (scoring, writing, web search) has not run in the container yet; a library writing a cache elsewhere would show there.
+- The container refuses to start without a password. With one: healthy; HSTS present, no `Server` header; `/` redirects to `/login`, the API answers 401 without a session.
+- In a browser through Caddy: wrong password message, sign-in, `__Host-masthead` cookie HttpOnly/Secure/SameSite=Strict for 7 days, sign-out back to `/login`.
+- `set-password` inside the running container closed both open sessions; the old password stopped working.
+- Six wrong sign-ins, each with a different spoofed `X-Forwarded-For`: the sixth got 429.
+- No password in the container logs.
+- Collect only inside the container through Caddy, on the starter domain: 15 collected. That run showed the starter feed `flightsimulator.com/feed/` answering 500; it was replaced by the mirror the owner's config uses.
+- Scheduled runs: set and paused from the interface; next run shown in the domain's time zone. A scheduled run has not yet fired on a real clock.
+
 Never verified yet:
 
-- The starter domain's feeds (`templates/flight-sim`) were written from memory and never tested.
+- Server mode on a real VPS with a public certificate (needs the owner's VPS).
+- A full run (with the model) inside the container.
+- A scheduled run firing at its time on a running server.
+- Of the starter domain's feeds, FSElite and MSFS Addons answered; the replacement MSFS feed was only tested in the owner's config, not in the starter.
 - Cost in money: no prices in `domain.json`, so none is shown.
 
 ## Roadmap, in order

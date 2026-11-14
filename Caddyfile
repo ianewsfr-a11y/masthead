@@ -1,0 +1,16 @@
+# HTTPS in front of MastHead. Caddy obtains and renews the certificate for
+# MASTHEAD_PUBLIC_HOST by itself (a local one when the name is localhost).
+{$MASTHEAD_PUBLIC_HOST} {
+	encode zstd gzip
+	# The console only sends small JSON bodies.
+	request_body {
+		max_size 1MB
+	}
+	header {
+		# Browsers keep to HTTPS for this host for a year.
+		Strict-Transport-Security "max-age=31536000"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	reverse_proxy masthead:8765
+}

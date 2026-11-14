@@ -86,6 +86,7 @@
     } catch (error) {
       throw new Error('MastHead is not answering. Is the server still running in your terminal?');
     }
+    if (response.status === 401) { window.location.replace('/login'); throw new Error('Sign in again.'); }
     let data = null;
     try { data = await response.json(); } catch (error) { /* not JSON */ }
     if (!response.ok) throw new Error((data && data.error) || `Request failed (${response.status}).`);
@@ -200,6 +201,78 @@
     drawSources(overview);
   }
 
+  // ---------------------------------------------------------------- schedule
+  const SCHEDULE_LAST = {
+    started: ['Started', 'ok', 'check'], skipped: ['Skipped', 'idle', 'dash'], failed_to_start: ['Did not start', 'warn', 'block'],
+  };
+
+  function inZone(iso, zone) {
+    const date = new Date(iso);
+    if (!iso || Number.isNaN(date.getTime())) return '';
+    try {
+      return date.toLocaleString('en-GB', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch (error) { return when(iso); }
+  }
+
+  function lastScheduled(last) {
+    if (!last) return h('p', { class: 'hint' }, 'No scheduled run yet.');
+    const [label, kind, iconName] = SCHEDULE_LAST[last.outcome] || ['Unknown', 'idle', 'dash'];
+    const result = last.run_status ? RUN_STATUS[last.run_status] : null;
+    return h('ul', { class: 'facts' },
+      fact('Last scheduled run', when(last.due)),
+      h('li', {}, h('span', {}, 'Outcome'), pill(label, kind, iconName)),
+      result ? h('li', {}, h('span', {}, 'Result'), pill(result[0], result[1], result[2])) : null,
+      last.message || last.error ? fact('Why', last.message || last.error) : null);
+  }
+
+  function schedulePanel(overview) {
+    const schedule = overview.schedule;
+    const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+    const chosenZone = schedule.timezone || browserZone;
+    const timeInput = h('input', { id: 'sched-time', type: 'time', required: true, value: schedule.time || '07:00' });
+    const zoneInput = zones.length
+      ? h('select', { id: 'sched-zone' }, ...(zones.includes(chosenZone) ? zones : [chosenZone, ...zones])
+        .map((zone) => h('option', { value: zone, selected: zone === chosenZone }, zone)))
+      : h('input', { id: 'sched-zone', type: 'text', value: chosenZone });
+    const enabled = h('input', { id: 'sched-on', type: 'checkbox', checked: schedule.configured ? schedule.enabled : true });
+
+    async function send(body, message) {
+      try {
+        drawSources(await api.post(domainPath('/schedule'), body));
+        toast(message);
+      } catch (error) { toast(error.message, true); }
+    }
+
+    const form = h('form', {
+      class: 'stack', onsubmit: (event) => {
+        event.preventDefault();
+        send({ time: timeInput.value, timezone: zoneInput.value, enabled: enabled.checked },
+          enabled.checked ? 'Schedule saved.' : 'Schedule saved, and paused.');
+      },
+    },
+      h('div', { class: 'field' }, h('label', { for: 'sched-time' }, 'Time of the daily run'), timeInput),
+      h('div', { class: 'field' }, h('label', { for: 'sched-zone' }, 'Time zone'), zoneInput),
+      h('div', { class: 'field switch-field' },
+        h('label', { class: 'switch' }, enabled, h('span', { class: 'track' })),
+        h('label', { for: 'sched-on' }, 'Scheduled runs on')),
+      h('div', { class: 'row-actions' },
+        h('button', { type: 'submit', class: 'btn primary' }, 'Save schedule'),
+        schedule.configured ? h('button', {
+          type: 'button', class: 'btn', onclick: () => send({ remove: true }, 'Schedule removed.'),
+        }, 'Remove') : null));
+
+    const status = !schedule.configured ? h('p', { class: 'hint' }, 'No schedule. Runs start only when you press Run now.')
+      : schedule.problem ? notice('This schedule cannot be used', schedule.problem)
+        : schedule.enabled ? h('ul', { class: 'facts' },
+          h('li', {}, h('span', {}, 'State'), pill('On', 'ok', 'check')),
+          fact('Next run', `${inZone(schedule.next_run, schedule.timezone)} (${schedule.timezone})`))
+          : h('ul', { class: 'facts' }, h('li', {}, h('span', {}, 'State'), pill('Paused', 'idle', 'dash')));
+
+    return panel('Schedule', status, lastScheduled(schedule.last), form,
+      h('p', { class: 'hint' }, 'One full run a day. A run that falls due while another one is going is skipped. Runs happen only while MastHead is running.'));
+  }
+
   function drawSources(overview) {
     const settings = overview.settings;
     const notices = [];
@@ -285,6 +358,7 @@
               h('tbody', {}, ...rows))))),
         h('div', { class: 'col-side' },
           panel('Essentials', form),
+          schedulePanel(overview),
           panel('Model',
             h('ul', { class: 'facts' },
               fact('Provider', settings.ai.provider),
@@ -709,6 +783,21 @@
     }
   }
 
+  // Server mode: say where MastHead runs, and offer to sign out.
+  async function setupSession() {
+    let session;
+    try { session = await api.get('/api/session'); } catch (error) { return; }
+    if (session.mode !== 'server') return;
+    document.getElementById('side-foot-label').textContent = 'Server';
+    document.getElementById('side-foot-text').textContent = 'Runs on your server. Your AI key stays there and is never shown.';
+    const button = document.getElementById('sign-out');
+    button.hidden = false;
+    button.addEventListener('click', async () => {
+      try { await api.post('/api/logout', {}); } finally { window.location.replace('/login'); }
+    });
+  }
+
   window.addEventListener('hashchange', render);
+  setupSession();
   render();
 })();
