@@ -32,7 +32,8 @@ class DomainEnvironment:
 
     def __init__(self, environ: MutableMapping[str, str] | None = None) -> None:
         self._environ = os.environ if environ is None else environ
-        self._base = dict(self._environ)
+        # An empty variable counts as unset, so it does not hide the domain's value.
+        self._base = {name: value for name, value in self._environ.items() if value}
         self._applied: set[str] = set()
 
     def is_available(self, domain: Any, name: str | None) -> bool:

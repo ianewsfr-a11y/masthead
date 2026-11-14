@@ -36,8 +36,8 @@
     "telegram": { "enabled": false },
     "rss": [
       {
-        "name": "Microsoft Flight Simulator",
-        "url": "https://www.flightsimulator.com/feed/",
+        "name": "MSFS Official Blog",
+        "url": "https://raw.githubusercontent.com/evroon/msfs-rss/main/feeds/msfs.xml",
         "enabled": true,
         "category": "official",
         "profile": "flightsim-news"
