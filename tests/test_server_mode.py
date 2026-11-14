@@ -252,6 +252,21 @@ def test_no_password_or_session_token_in_logs(app, capfd):
         assert secret not in out and secret not in err
 
 
+async def test_no_article_text_in_logs(app, capfd):
+    from masthead.demo import seed_demo_run
+    from masthead.domains import get_domain
+
+    run_id = await seed_demo_run(get_domain("flight-sim"))  # Horizon's real selection and briefing
+    client = browser(app)
+    sign_in(client)
+    detail = client.get(f"/api/domains/flight-sim/runs/{run_id}").json()
+    client.get(f"/api/domains/flight-sim/runs/{run_id}/briefing", params={"language": "en"})
+    titles = [d["title"] for d in detail["journal"]["decisions"]]
+    out, err = capfd.readouterr()
+    assert titles and not any(title in out or title in err for title in titles)
+    assert "Invented story" not in out + err
+
+
 # -- local mode is unchanged ----------------------------------------------------
 
 

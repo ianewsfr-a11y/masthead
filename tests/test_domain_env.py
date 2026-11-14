@@ -44,6 +44,16 @@ def test_the_servers_own_environment_wins_and_is_never_removed(tmp_path):
     assert env.is_available(alpha, "ANTHROPIC_API_KEY")
 
 
+def test_an_empty_server_variable_does_not_hide_the_domains_value(tmp_path):
+    environ = {"ANTHROPIC_API_KEY": ""}  # as left by a container with an unset variable
+    env = DomainEnvironment(environ)
+    alpha = _domain(tmp_path / "alpha", "ANTHROPIC_API_KEY=alpha-value\n")
+    env.apply(alpha)
+    assert environ["ANTHROPIC_API_KEY"] == "alpha-value"
+    env.apply(_domain(tmp_path / "beta"))
+    assert not environ.get("ANTHROPIC_API_KEY")
+
+
 def test_a_key_edited_in_the_file_is_taken_at_the_next_run(tmp_path):
     environ: dict[str, str] = {}
     env = DomainEnvironment(environ)

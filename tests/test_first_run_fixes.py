@@ -4,23 +4,11 @@ from __future__ import annotations
 
 import ssl
 
-import pytest
-
 from masthead import cli, tls
 from masthead.runner import collect_detail
 
 
-@pytest.fixture()
-def restore_ssl():
-    original = ssl.SSLContext
-    yield
-    if ssl.SSLContext is not original:
-        import truststore
-
-        truststore.extract_from_ssl()
-
-
-def test_certificates_are_checked_against_the_system_store(restore_ssl):
+def test_certificates_are_checked_against_the_system_store():
     """An antivirus or a company proxy that inspects HTTPS installs its root in the
     operating system's store, not in certifi. Verification must stay on, against
     the store the browser uses."""

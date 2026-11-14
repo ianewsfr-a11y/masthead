@@ -1,0 +1,52 @@
+# MastHead behind Caddy. Caddy gets the HTTPS certificate on its own and is
+# the only service reachable from outside. See README "Run it on a server".
+#
+# Needs MASTHEAD_PUBLIC_HOST, the name users type (for example
+# masthead.example.com), in a .env file next to this one or in the shell.
+
+services:
+  masthead:
+    build: .
+    image: masthead:local
+    restart: unless-stopped
+    environment:
+      MASTHEAD_PUBLIC_HOST: ${MASTHEAD_PUBLIC_HOST:?Set MASTHEAD_PUBLIC_HOST to the host name users type}
+      # Only Caddy, on the private network below, may give the client address.
+      MASTHEAD_TRUSTED_PROXIES: 172.31.250.0/24
+    volumes:
+      - masthead-data:/data
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - masthead
+    ports:
+      - "${MASTHEAD_HTTP_PORT:-80}:80"
+      - "${MASTHEAD_HTTPS_PORT:-443}:443"
+      - "${MASTHEAD_HTTPS_PORT:-443}:443/udp"
+    environment:
+      MASTHEAD_PUBLIC_HOST: ${MASTHEAD_PUBLIC_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - internal
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  masthead-data:
+  caddy-data:
+  caddy-config:
