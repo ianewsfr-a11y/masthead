@@ -21,7 +21,14 @@ from rich.console import Console
 from src.ai.prompting.deduplication import TOPIC_DEDUP_SYSTEM
 from src.ai.utils import parse_json_response
 from src.mcp.errors import HorizonMcpError
-from src.mcp.horizon_adapter import dicts_to_items, make_storage
+from src.mcp.horizon_adapter import (
+    apply_source_filter,
+    dicts_to_items,
+    load_config,
+    make_storage,
+    resolve_config_path,
+    resolve_horizon_path,
+)
 from src.mcp.service import HorizonPipelineService, PipelineContext
 from src.orchestrator import HorizonOrchestrator
 
@@ -79,6 +86,22 @@ class MastHeadService(HorizonPipelineService):
             recorder=self._dedup_calls,
             client_factory=self._client_factory,
         )
+
+    def _build_context(  # type: ignore[override]
+        self,
+        horizon_path: str | None,
+        config_path: str | None,
+        sources: list[str] | None,
+    ) -> tuple[PipelineContext, list[str], list[str]]:
+        """Horizon's context, without loading the domain's .env into the process.
+
+        MastHead loads a domain's .env only when one of its runs starts
+        (see env.DomainEnvironment), so a key never serves another domain.
+        """
+        resolved_horizon = resolve_horizon_path(horizon_path)
+        resolved_config = resolve_config_path(resolved_horizon, config_path)
+        config, selected, unknown = apply_source_filter(load_config(resolved_config), sources)
+        return PipelineContext(horizon_path=resolved_horizon, config_path=resolved_config, config=config), selected, unknown
 
     def context(self) -> PipelineContext:
         return self._build_context(horizon_path=self.workspace, config_path=None, sources=None)[0]

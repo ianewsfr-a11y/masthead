@@ -7,7 +7,6 @@ validated by Horizon's own model before being saved.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from src.models import SOURCE_REGISTRY, Config
@@ -123,7 +122,7 @@ def set_source_enabled(domain: Domain, key: str, enabled: bool) -> None:
     domain.write_raw_config(raw)
 
 
-def settings_view(domain: Domain, service: MastHeadService) -> dict[str, Any]:
+def settings_view(domain: Domain, service: MastHeadService, key_available: bool) -> dict[str, Any]:
     ctx = service.context()
     config = ctx.config
     registry = service._profiles(ctx)
@@ -150,7 +149,7 @@ def settings_view(domain: Domain, service: MastHeadService) -> dict[str, Any]:
             "temperature": config.ai.temperature,
             "api_key_env": key_env,
             # Only whether the key is present. Its value never leaves the process.
-            "api_key_present": bool(key_env and os.getenv(key_env)) or config.ai.provider.value == "ollama",
+            "api_key_present": key_available or config.ai.provider.value == "ollama",
         },
         "time_window_hours": config.collection.time_window_hours,
         "max_items": config.digest.max_items,
