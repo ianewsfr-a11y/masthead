@@ -116,6 +116,10 @@ def create_app(client_factory=None) -> FastAPI:
             if not (text.startswith("GITHUB_TOKEN ") and env.is_available(domain, "GITHUB_TOKEN"))
         ]
         key_available = env.is_available(domain, ctx.config.ai.api_key_env)
+        # While another domain's run goes, its key is in the process and Horizon would count it here.
+        needs_key = ctx.config.ai.provider.value not in ("ollama", "openai-chatgpt")
+        if needs_key and not key_available and ctx.config.ai.api_key_env not in missing:
+            missing.insert(0, ctx.config.ai.api_key_env)
         return {
             "id": domain.id,
             "name": domain.name,

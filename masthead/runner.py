@@ -223,6 +223,8 @@ class RunManager:
                 self._record(job, service)
             except Exception:
                 traceback.print_exc()
+            # The domain's .env values are in the process only while its run goes.
+            self.env.clear()
 
     def cancel(self, job_id: str) -> bool:
         job = self.jobs.get(job_id)

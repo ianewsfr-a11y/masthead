@@ -42,11 +42,15 @@ class DomainEnvironment:
             return False
         return bool(self._base.get(name)) or name in domain_values(domain)
 
-    def apply(self, domain: Any) -> None:
+    def clear(self) -> None:
+        """Remove the values applied for the last domain; the starting environment stays."""
         for name in self._applied:
             if name not in self._base:
                 self._environ.pop(name, None)
         self._applied = set()
+
+    def apply(self, domain: Any) -> None:
+        self.clear()
         for name, value in domain_values(domain).items():
             if name not in self._base:
                 self._environ[name] = value
