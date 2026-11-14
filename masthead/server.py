@@ -21,7 +21,7 @@ from . import config_view
 from .domains import DomainError, get_domain, list_domains
 from .env import DomainEnvironment
 from .runner import RunManager, failed_source_count
-from . import new_domain_api
+from . import ai_api, new_domain_api
 from .service import MastHeadService
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -80,6 +80,7 @@ def create_app(client_factory=None) -> FastAPI:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
     new_domain_api.install(app, manager)
+    ai_api.install(app, env)
 
     # -- domains -----------------------------------------------------------
 
@@ -99,6 +100,7 @@ def create_app(client_factory=None) -> FastAPI:
                     "sources_enabled": sum(1 for row in rows if row["enabled"]),
                     "languages": list(ctx.config.ai.languages),
                     "model": ctx.config.ai.model,
+                    "provider": ctx.config.ai.provider.value,
                     "runs": len(runs),
                     "last_run": runs[0]["updated_at"] if runs else None,
                 })
@@ -124,6 +126,14 @@ def create_app(client_factory=None) -> FastAPI:
         needs_key = ctx.config.ai.provider.value not in ("ollama", "openai-chatgpt")
         if needs_key and not key_available and ctx.config.ai.api_key_env not in missing:
             missing.insert(0, ctx.config.ai.api_key_env)
+        settings = config_view.settings_view(domain, service, key_available)
+        raw_ai = domain.raw_config().get("ai") or {}
+        settings["ai"].update({
+            # Where the key comes from (environment, domain, shared); never the key itself.
+            "key_source": env.source(domain, ctx.config.ai.api_key_env) if needs_key else None,
+            "base_url": raw_ai.get("base_url"),
+            "api_version": raw_ai.get("api_version"),
+        })
         return {
             "id": domain.id,
             "draft": domain.meta().get("draft") is True,
@@ -131,10 +141,15 @@ def create_app(client_factory=None) -> FastAPI:
             "description": domain.meta().get("description"),
             "folder": str(domain.path),
             "sources": config_view.sources_view(domain, ctx.config),
-            "settings": config_view.settings_view(domain, service, key_available),
+            "settings": settings,
             "missing_env": missing,
             "warnings": warnings,
         }
+
+    @app.post("/api/domains/{domain_id}/model")
+    async def save_model(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        config_view.set_model(get_domain(domain_id), body)
+        return await domain_overview(domain_id)
 
     @app.post("/api/domains/{domain_id}/sources")
     async def toggle_source(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:

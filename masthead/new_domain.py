@@ -76,7 +76,10 @@ def create_draft(body: dict[str, Any]) -> Domain:
     languages = _languages(body.get("languages"))
     ai = _ai_section(body.get("copy_from"))
     ai["languages"] = languages
-    if isinstance(body.get("model"), str) and body["model"].strip():
+    if body.get("provider"):
+        ai = config_view.ai_choice(ai, {"provider": body["provider"], "model": body.get("model"),
+                                        "base_url": body.get("base_url")})
+    elif isinstance(body.get("model"), str) and body["model"].strip():
         ai["model"] = body["model"].strip()
 
     target = domains_dir() / domain_id
