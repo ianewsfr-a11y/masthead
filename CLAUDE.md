@@ -117,6 +117,8 @@ Domain editor, checked on 14 November 2026 in a headless browser on a scratch fo
 - Discard: an application dialog, focus on Cancel, Esc keeps the draft. Create took the draft to Runs.
 - Imported domain: rules shown as "Hand-written files", opened on the files; the form shows a warning and saving it asks "Replace the hand-written rules?"; Cancel left the files untouched (dates unchanged).
 - No native browser dialog, no console error; no horizontal scroll at 390 px on Domains, editor, New domain, Runs (a long keys path widened Domains before; fixed).
+- Reported by the owner: choosing Ollama in the list still showed the previous provider's key until saved. The Key part now follows the provider chosen in the list at once, says when it is not saved yet, and shows "needs no key" for Ollama. Checked on virtual-flight (view only: Ollama, OpenAI, back to Anthropic) and business-school (saved as Ollama: no key asked).
+- The owner's PC has Ollama installed but not running (nothing on port 11434), so business-school cannot score yet.
 
 New domain (first version, replaced by the editor above), checked on 14 November 2026 in a headless browser on a scratch folder, with real feeds:
 

@@ -124,18 +124,32 @@
       M.h('fieldset', {}, M.h('legend', {}, 'AI'), ...fields.nodes),
       M.h('div', { class: 'row-actions' }, save, tracker.indicator), message.area));
 
+    // The key part follows the AI chosen in the list at once, saved or not: choosing Ollama
+    // must not leave the previous provider's key on screen.
     const keyHolder = M.h('div', { class: 'stack' });
+    const providerSelect = form.querySelector('#ed-ai-provider');
+    let latest = { overview, status };
     function drawKey(fresh, freshStatus) {
-      const freshAi = fresh.settings.ai;
-      const provider = freshStatus.providers.find((p) => p.id === freshAi.provider);
+      latest = { overview: fresh, status: freshStatus };
+      const savedAi = fresh.settings.ai;
+      const chosenId = providerSelect ? providerSelect.value : savedAi.provider;
+      const provider = freshStatus.providers.find((p) => p.id === chosenId);
+      const saved = chosenId === savedAi.provider;
+      const notSaved = saved ? null : M.h('p', { class: 'hint' },
+        `${provider ? provider.label : chosenId} is chosen above but not saved yet: this domain still uses ${savedAi.provider} until you press Save subject and AI.`);
       if (!provider || !provider.needs_key) {
-        keyHolder.replaceChildren(M.h('p', { class: 'hint' }, 'This AI needs no key.'));
+        keyHolder.replaceChildren(...[notSaved,
+          M.h('p', { class: 'hint' }, `${provider ? provider.label : 'This AI'} needs no key.`)].filter(Boolean));
         return;
       }
-      keyHolder.replaceChildren(
-        window.MastHeadAI.keyStatus(M, freshAi.api_key_present, freshAi.key_source),
-        window.MastHeadAI.keyForm(M, provider, () => ctx.refresh(), 'ed-key'));
+      // For the saved provider the domain's own .env counts; for another one, only what MastHead knows for all domains.
+      const present = saved ? savedAi.api_key_present : provider.key_present;
+      const source = saved ? savedAi.key_source : provider.key_source;
+      keyHolder.replaceChildren(...[notSaved,
+        window.MastHeadAI.keyStatus(M, present, source),
+        window.MastHeadAI.keyForm(M, provider, () => ctx.refresh(), 'ed-key')].filter(Boolean));
     }
+    if (providerSelect) providerSelect.addEventListener('change', () => drawKey(latest.overview, latest.status));
     drawKey(overview, status);
     return {
       redraw: drawKey,
