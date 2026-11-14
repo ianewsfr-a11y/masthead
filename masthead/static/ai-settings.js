@@ -123,9 +123,9 @@
   }
 
   // Sources and settings: the domain's AI, editable, and its key.
-  function modelPanel(M, overview, status, onSaved) {
+  function modelPanel(M, overview, status, onSaved, title = 'AI') {
     const ai = overview.settings.ai;
-    if (!status) return M.panel('AI', M.h('p', { class: 'hint' }, 'Loading…'));
+    if (!status) return M.panel(title, M.h('p', { class: 'hint' }, 'Loading…'));
     const fields = modelFields(M, status.providers, ai, 'ai');
     const save = M.h('button', { type: 'submit', class: 'btn primary' }, 'Save the AI choice');
     const form = M.h('form', {
@@ -141,7 +141,7 @@
     }, ...fields.nodes, M.h('div', {}, save));
     const provider = status.providers.find((p) => p.id === ai.provider);
     const needsKey = provider ? provider.needs_key : Boolean(ai.api_key_env);
-    return M.panel('AI',
+    return M.panel(title,
       form,
       M.h('ul', { class: 'facts' },
         M.fact('Languages', ai.languages.join(', ')),

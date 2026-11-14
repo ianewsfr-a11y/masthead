@@ -397,17 +397,13 @@
     }
     listHolder.replaceChildren(sourcesList(M, domainId, overview, refreshSources));
     const ai = overview.settings.ai;
-    const provider = status.providers.find((p) => p.id === ai.provider && p.needs_key);
-    const keyFact = ai.api_key_present ? 'found' : `not found (${ai.api_key_env})`;
+    const redraw = () => viewDraft(M, domainId, M.state.token);
 
     M.show(
       M.pageHead(`New domain: ${overview.name}`, 'A draft until you create it. Steps 2 to 4 can be done in any order and repeated.'),
-      ai.api_key_present || !provider ? null : M.panel('Key for this AI',
-        M.h('p', { class: 'hint' }, `Suggestions and the scored trial use ${provider.label}. Enter its key once: every domain using ${provider.label} shares it. You can test and add sources without it.`),
-        window.MastHeadAI.keyForm(M, provider, () => viewDraft(M, domainId, M.state.token), 'nd-key')),
       M.panel('1. Subject', M.h('ul', { class: 'facts' },
-        M.fact('Name', overview.name), M.fact('Id', overview.id), M.fact('Languages', ai.languages.join(', ')),
-        M.fact('Model', `${ai.provider} · ${ai.model}`), M.fact('AI key', keyFact))),
+        M.fact('Name', overview.name), M.fact('Id', overview.id), M.fact('Languages', ai.languages.join(', ')))),
+      window.MastHeadAI.modelPanel(M, overview, status, redraw, 'AI and key'),
       M.panel('2. Sources',
         M.h('p', { class: 'hint' }, 'Hacker News, Reddit and Telegram are read by Horizon unless switched off: this draft switches them off until you add a subreddit or a channel.'),
         listHolder, manualAdd(M, domainId, refreshSources), suggestions(M, domainId, overview, refreshSources)),

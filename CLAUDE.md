@@ -100,6 +100,7 @@ AI keys and AI choice, checked on 14 November 2026 in a headless browser on a sc
 - A key saved in Domains, AI keys shows as Saved; it is in `keys.env` and appeared in no page's HTML at any step.
 - Sources and settings: Anthropic with the shared key shows Key found; switching to OpenAI shows No key and the missing-key notice; Ollama fills its local address; back to Anthropic finds the shared key again.
 - New domain with DeepSeek: the draft shows its key panel; deleting the saved key removes it from the file. No console error.
+- The same AI panel (provider, model, key) is on a draft's page, under "1. Subject" ("AI and key"); checked on the owner's draft `business-school` (view only) and with a full round trip on a scratch draft (Gemini saved, key entered, suggestions enabled, key absent from the page).
 - Not checked: a real run with a key entered in the interface, or with another provider than Anthropic.
 
 New domain, checked on 14 November 2026 in a headless browser on a scratch folder, with real feeds:
