@@ -238,6 +238,134 @@ def test_limiter_counts_per_address_and_overall():
     assert limiter.retry_after("a") == 0 and limiter.retry_after("c") == 0
 
 
+def test_attempts_are_counted_before_the_password_is_checked(app):
+    """Parallel sign-ins must not all pass the limiter before the first failure is recorded."""
+    import asyncio
+
+    from masthead.web_auth import ServerGuard
+
+    guard: ServerGuard = app.state.guard
+    started = []
+
+    async def slow_verify(password, encoded):
+        started.append(password)
+        return False
+
+    async def attempt(client):
+        return await client.post("/api/login", json={"password": "wrong password, long enough"})
+
+    async def burst():
+        import httpx
+
+        transport = httpx.ASGITransport(app=app, client=("198.51.100.7", 4000))
+        async with httpx.AsyncClient(transport=transport, base_url=f"https://{HOST}",
+                                     headers={"origin": ORIGIN}) as client:
+            return await asyncio.gather(*(attempt(client) for _ in range(20)))
+
+    guard.verify = slow_verify
+    codes = [response.status_code for response in asyncio.run(burst())]
+    assert len(started) <= 5 and codes.count(429) >= 15
+
+
+def test_only_two_password_checks_run_at_once(credentials):
+    import asyncio
+
+    from masthead.web_auth import ServerGuard
+
+    guard = ServerGuard(ServerSettings(public_host=HOST, credentials=credentials))
+    running, peak = [0], [0]
+
+    async def slow(password, encoded):
+        running[0] += 1
+        peak[0] = max(peak[0], running[0])
+        await asyncio.sleep(0.05)
+        running[0] -= 1
+        return False
+
+    guard.verify = slow
+
+    async def many():
+        return await asyncio.gather(*(guard.check_password(f"pw-{n}", "hash") for n in range(6)))
+
+    results = asyncio.run(many())
+    assert peak[0] <= 2 and results.count(None) >= 1  # None: too busy, try again
+
+
+def test_an_overlong_password_is_refused_before_hashing(app):
+    client = browser(app)
+    assert sign_in(client, "x" * 5000).status_code == 400
+
+
+def test_the_owner_can_still_sign_in_when_others_hit_the_overall_limit():
+    now = [0.0]
+    limiter = LoginLimiter(per_address=5, overall=3, window_seconds=60, clock=lambda: now[0])
+    limiter.success("owner")
+    for n in range(3):
+        limiter.failure(f"attacker-{n}")
+    assert limiter.retry_after("stranger") > 0
+    assert limiter.retry_after("owner") == 0
+
+
+def test_origin_and_host_must_match_the_public_port(credentials):
+    port_app = create_app(server=ServerSettings(public_host=HOST, credentials=credentials, public_port=8443))
+    good = TestClient(port_app, base_url=f"https://{HOST}:8443", headers={"origin": f"https://{HOST}:8443"})
+    assert sign_in(good).status_code == 200
+    other_port = TestClient(port_app, base_url=f"https://{HOST}:8443", headers={"origin": f"https://{HOST}:9443"})
+    assert sign_in(other_port).status_code == 403
+    default_port = browser(port_app)  # Host and Origin without a port mean 443
+    assert sign_in(default_port).status_code == 403
+    assert browser(create_app(server=ServerSettings(public_host=HOST, credentials=credentials)),
+                   origin=f"https://{HOST}:8443").post("/api/login", json={"password": PASSWORD}).status_code == 403
+
+
+def test_json_means_exactly_application_json(app):
+    client = browser(app)
+    sign_in(client)
+    sneaky = client.post("/api/domains/flight-sim/settings", content=b'{"max_items": 5}',
+                         headers={"content-type": "text/plain; x=application/json"})
+    assert sneaky.status_code == 415
+    charset = client.post("/api/domains/flight-sim/settings", content=b'{"max_items": 5}',
+                          headers={"content-type": "application/json; charset=utf-8"})
+    assert charset.status_code == 200
+
+
+def test_refusals_carry_the_security_headers(app):
+    client = browser(app)
+    for response in (client.get("/api/domains"), client.get("/", follow_redirects=False),
+                     TestClient(app, base_url="https://evil.example").get("/login")):
+        assert response.status_code in (401, 303, 403)
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_sign_out_clears_the_cookie_even_after_the_session_ended(app, credentials):
+    client = browser(app)
+    sign_in(client)
+    credentials.save(hash_password("a brand new long password"))  # session now invalid
+    out = client.post("/api/logout", json={})
+    assert out.status_code == 200 and "max-age=0" in out.headers["set-cookie"].lower()
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="file modes are POSIX")
+def test_auth_file_is_never_readable_by_others(home):
+    import stat
+
+    source = CredentialSource(home)
+    source.save(hash_password(PASSWORD))
+    assert stat.S_IMODE(source.path.stat().st_mode) == 0o600
+
+
+def test_expired_sessions_are_purged():
+    now = [0.0]
+    store = SessionStore(ttl_seconds=10, clock=lambda: now[0])
+    for _ in range(3):
+        store.create("credential")
+    now[0] += 11
+    store.create("credential")
+    assert len(store._sessions) == 1
+
+
 # -- secrets stay out of logs and responses --------------------------------------
 
 

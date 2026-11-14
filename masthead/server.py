@@ -60,6 +60,7 @@ def create_app(client_factory=None, server: ServerSettings | None = None) -> Fas
                   lifespan=lifespan)
     app.state.manager = manager
     app.state.scheduler = scheduler
+    app.state.guard = guard
 
     def schedule_view(domain_id: str) -> dict[str, Any]:
         view = scheduler.status(domain_id, datetime.now(timezone.utc))
@@ -72,9 +73,7 @@ def create_app(client_factory=None, server: ServerSettings | None = None) -> Fas
     @app.middleware("http")
     async def gate(request: Request, call_next):
         refusal = guard.refusal(request) if guard else local_refusal(request)
-        if refusal is not None:
-            return refusal
-        response = await call_next(request)
+        response = refusal if refusal is not None else await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = (

@@ -98,11 +98,11 @@ docker compose exec masthead masthead import --id my-domain --name "My domain" \
 **What protects it**
 
 - MastHead refuses to start in server mode without a password and a host name, and refuses to listen beyond loopback without `--server`.
-- The password is stored as a salted scrypt hash (`/data/auth.json`). `masthead set-password` changes it and closes every open session. To give it through the environment instead, set `MASTHEAD_PASSWORD_HASH` to the output of `masthead hash-password`.
+- The password is stored as a salted scrypt hash (`/data/auth.json`, readable by its owner only). `masthead set-password` changes it and closes every open session. Without Docker, you can give it through the environment instead: set `MASTHEAD_PASSWORD_HASH` to the output of `masthead hash-password`. The compose file does not pass that variable; if you add it there, write each `$` of the hash as `$$`, or Compose will alter it.
 - Sessions are kept in memory and last 7 days; restarting signs you out. The cookie is `HttpOnly`, `Secure` and `SameSite=Strict`.
 - Requests that change something must come from the console's own page (checked `Origin`) and be JSON. Requests for any other host name are refused.
-- Sign-in allows 5 failures per address and 50 overall per 15 minutes.
-- Caddy sends `Strict-Transport-Security`. Only Caddy is reachable from outside; MastHead listens on a private Docker network.
+- Sign-in allows 5 failures per address and 50 overall per 15 minutes; an address that signed in successfully in the last 30 days is not held by the overall limit. At most two password checks run at once.
+- Caddy sends `Strict-Transport-Security` and refuses request bodies over 1 MB. Only Caddy is reachable from outside; MastHead listens on a private Docker network, with a read-only file system except its data volume, no Linux capabilities, and memory and process limits.
 - `/healthz` answers `{"status": "ok"}` without sign-in, for monitoring. Logs contain no password, no key and no article text.
 
 Without Docker: `masthead set-password`, then `masthead serve --server --host 0.0.0.0 --public-host masthead.example.com --trusted-proxies 127.0.0.1` behind your own HTTPS proxy.

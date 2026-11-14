@@ -11,16 +11,22 @@ services:
     restart: unless-stopped
     environment:
       MASTHEAD_PUBLIC_HOST: ${MASTHEAD_PUBLIC_HOST:?Set MASTHEAD_PUBLIC_HOST to the host name users type}
+      MASTHEAD_PUBLIC_PORT: ${MASTHEAD_HTTPS_PORT:-443}
       # Only Caddy, on the private network below, may give the client address.
       MASTHEAD_TRUSTED_PROXIES: 172.31.250.0/24
     volumes:
       - masthead-data:/data
+    tmpfs:
+      - /tmp
+    read_only: true
     networks:
       - internal
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    mem_limit: 1g
+    pids_limit: 256
 
   caddy:
     image: caddy:2.10-alpine
@@ -39,6 +45,14 @@ services:
       - caddy-config:/config
     networks:
       - internal
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    mem_limit: 256m
+    pids_limit: 128
 
 networks:
   internal:

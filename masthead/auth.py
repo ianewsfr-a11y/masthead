@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Callable
 
 MIN_PASSWORD_LENGTH = 12
+MAX_PASSWORD_LENGTH = 1024  # longer input is refused before any hashing
 ENV_HASH = "MASTHEAD_PASSWORD_HASH"
 AUTH_FILE = "auth.json"
 SESSION_TTL_SECONDS = 7 * 24 * 3600
@@ -40,6 +41,8 @@ def _b64(data: bytes) -> str:
 def hash_password(password: str) -> str:
     if len(password) < MIN_PASSWORD_LENGTH:
         raise PasswordError(f"Use at least {MIN_PASSWORD_LENGTH} characters.")
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise PasswordError(f"Use at most {MAX_PASSWORD_LENGTH} characters.")
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=_N, r=_R, p=_P, maxmem=_MAXMEM, dklen=32)
     return f"scrypt${_N}${_R}${_P}${_b64(salt)}${_b64(digest)}"
@@ -87,8 +90,11 @@ class CredentialSource:
             raise PasswordError(f"The password comes from {ENV_HASH}; change it there.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps({"password": encoded}) + "\n", encoding="utf-8")
-        os.chmod(tmp, 0o600)
+        tmp.unlink(missing_ok=True)
+        # Created with owner-only rights from the start: the hash is never readable by others.
+        descriptor = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"password": encoded}) + "\n")
         tmp.replace(self.path)
 
 
@@ -109,6 +115,8 @@ class SessionStore:
         return hashlib.sha256(credential.encode("utf-8")).hexdigest()
 
     def create(self, credential: str) -> str:
+        now = self._clock()
+        self._sessions = {key: value for key, value in self._sessions.items() if value[0] > now}
         token = secrets.token_urlsafe(32)
         self._sessions[self._key(token)] = (self._clock() + self.ttl, self._tag(credential))
         return token
@@ -137,7 +145,15 @@ class SessionStore:
 
 
 class LoginLimiter:
-    """Failed sign-ins per address and overall, over a sliding window."""
+    """Sign-in attempts per address and overall, over a sliding window.
+
+    An attempt counts as a failure from the moment it starts and is cleared if
+    it succeeds, so parallel attempts cannot all pass before the first result.
+    An address that signed in successfully in the last 30 days is not held by
+    the overall limit, so strangers failing elsewhere cannot lock the owner out.
+    """
+
+    KNOWN_SECONDS = 30 * 24 * 3600
 
     def __init__(
         self,
@@ -151,6 +167,7 @@ class LoginLimiter:
         self.window = window_seconds
         self._clock = clock
         self._failures: deque[tuple[float, str]] = deque()
+        self._known: dict[str, float] = {}
 
     def _prune(self) -> float:
         now = self._clock()
@@ -165,7 +182,8 @@ class LoginLimiter:
         waits = []
         if len(mine) >= self.per_address:
             waits.append(mine[-self.per_address] + self.window - now)
-        if len(self._failures) >= self.overall:
+        known = self._known.get(address, float("-inf")) > now - self.KNOWN_SECONDS
+        if len(self._failures) >= self.overall and not known:
             waits.append(self._failures[-self.overall][0] + self.window - now)
         return max(1, int(max(waits)) + 1) if waits else 0
 
@@ -175,3 +193,4 @@ class LoginLimiter:
 
     def success(self, address: str) -> None:
         self._failures = deque(item for item in self._failures if item[1] != address)
+        self._known[address] = self._clock()

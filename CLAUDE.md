@@ -79,7 +79,7 @@ docker build --target test -t masthead:test . ; docker run --rm masthead:test   
 
 ## State of the prototype
 
-Covered by tests (`tests/`, 52 tests, no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store (Windows, and Linux in the container), failed feeds counted, runs with failed sources flagged, per-domain `.env`, server mode (refusal to start, sign-in, cookie, sign-out, password change, cross-site and foreign host, rate limit, no secret or article text in logs), scheduled runs (time zones, daylight saving, pause, skip while busy, API).
+Covered by tests (`tests/`, 62 tests, no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store (Windows, and Linux in the container), failed feeds counted, runs with failed sources flagged, per-domain `.env`, server mode (refusal to start, sign-in, cookie, sign-out, password change, cross-site and foreign host, rate limit, no secret or article text in logs), scheduled runs (time zones, daylight saving, pause, skip while busy, API).
 
 First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
 
@@ -89,7 +89,9 @@ First real run, 14 November 2026, owner's virtual-flight config imported as doma
 
 Server mode, checked on 14 November 2026 on the owner's PC with Docker (Caddy with a local certificate for `localhost`, ports 8080/8443):
 
-- Whole test suite passes on Linux in the container (52 tests, including the system certificate store test) and on Windows (51, the Linux test skipped).
+- Whole test suite passes on Linux in the container (62 tests, including the system certificate store test and the auth.json file mode) and on Windows (60, the two Linux-only tests skipped).
+- A security review of the branch found no critical issue. Fixed after it: sign-in attempts counted before the password check and at most two scrypt checks at once (parallel sign-ins could exhaust memory); an address that signed in recently is not held by the overall limit (strangers could lock the owner out); Host and Origin must match the public port too; JSON content type matched exactly; security headers on refusals; sign-out clears the cookie even after the session ended; auth.json created owner-only; expired sessions purged; Compose limits (memory, processes), read-only file system, no capabilities; Caddy body limit 1 MB.
+- Read-only file system: collection works and writes outside `/data` and `/tmp` are refused. A full run (scoring, writing, web search) has not run in the container yet; a library writing a cache elsewhere would show there.
 - The container refuses to start without a password. With one: healthy; HSTS present, no `Server` header; `/` redirects to `/login`, the API answers 401 without a session.
 - In a browser through Caddy: wrong password message, sign-in, `__Host-masthead` cookie HttpOnly/Secure/SameSite=Strict for 7 days, sign-out back to `/login`.
 - `set-password` inside the running container closed both open sessions; the old password stopped working.
@@ -101,6 +103,7 @@ Server mode, checked on 14 November 2026 on the owner's PC with Docker (Caddy wi
 Never verified yet:
 
 - Server mode on a real VPS with a public certificate (needs the owner's VPS).
+- A full run (with the model) inside the container.
 - A scheduled run firing at its time on a running server.
 - Of the starter domain's feeds, FSElite and MSFS Addons answered; the replacement MSFS feed was only tested in the owner's config, not in the starter.
 - Cost in money: no prices in `domain.json`, so none is shown.

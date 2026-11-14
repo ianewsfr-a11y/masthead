@@ -30,12 +30,15 @@ def _server_settings(args: argparse.Namespace):
     public_host = (args.public_host or os.environ.get("MASTHEAD_PUBLIC_HOST") or "").strip()
     if not public_host:
         raise StartError("Server mode needs the public host name: set MASTHEAD_PUBLIC_HOST or use --public-host.")
+    port_text = str(args.public_port or os.environ.get("MASTHEAD_PUBLIC_PORT") or "443").strip()
+    if not port_text.isdigit() or not 0 < int(port_text) < 65536:
+        raise StartError("The public port must be a number from 1 to 65535.")
     credentials = CredentialSource(home_dir())
     if credentials.current() is None:
         raise StartError(
             "Server mode needs a password. Run 'masthead set-password' first, or set MASTHEAD_PASSWORD_HASH."
         )
-    return ServerSettings(public_host=public_host, credentials=credentials)
+    return ServerSettings(public_host=public_host, credentials=credentials, public_port=int(port_text))
 
 
 def _serve(args: argparse.Namespace) -> int:
@@ -52,7 +55,7 @@ def _serve(args: argparse.Namespace) -> int:
     print(f"MastHead {__version__} for Horizon")
     print(f"  Domains folder: {home_dir() / 'domains'}")
     if settings:
-        print(f"  Server mode for https://{settings.public_host}/ (listening on {args.host}:{args.port})")
+        print(f"  Server mode for {settings.origin}/ (listening on {args.host}:{args.port})")
         proxies = args.trusted_proxies or os.environ.get("MASTHEAD_TRUSTED_PROXIES") or "127.0.0.1"
         # Client addresses (used to limit sign-in attempts) are taken from the proxy only.
         uvicorn.run(create_app(server=settings), host=args.host, port=args.port, log_level="warning",
@@ -130,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--host", default="127.0.0.1", help="address to listen on (anything but loopback needs --server)")
     serve.add_argument("--server", action="store_true", help="server mode: sign-in required, behind an HTTPS proxy")
     serve.add_argument("--public-host", help="host name users type, e.g. masthead.example.com (or MASTHEAD_PUBLIC_HOST)")
+    serve.add_argument("--public-port", help="HTTPS port users type, when not 443 (or MASTHEAD_PUBLIC_PORT)")
     serve.add_argument("--trusted-proxies", help="proxy addresses or networks allowed to give the client address")
     serve.add_argument("--no-browser", action="store_true")
     serve.set_defaults(func=_serve)
