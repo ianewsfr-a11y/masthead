@@ -60,16 +60,28 @@ python -m venv .venv
 - Scoring only sees the first 1,000 characters of an article by default (`analysis_max_chars` in the profile).
 - Horizon escapes apostrophes badly in its Markdown output.
 - Horizon is at version 0.1.0 and not published as a stable package: every bump of the pinned commit needs a full test pass.
+- Horizon reports all RSS feeds as a single source ("RSS Feeds") in its fetch report; per-feed failures are only in `failures`. MastHead counts feeds, not groups.
+- Horizon's `web_search` (DuckDuckGo, no key) returns an empty list on failure and only logs a warning. The model also decides on its own whether to search: in the first real run, 1 story out of 5 used it.
+- Horizon loads each domain's `.env` into the process environment with `override=False`: the first value loaded wins for the life of the process, across domains.
+- Prompt overrides copied over Horizon's files (such as the owner's `overrides/deduplication.py` in virtual-flight) do not apply in MastHead, which uses the installed Horizon.
+
+## Known machine traps
+
+- HTTPS inspection by an antivirus (Norton Web/Mail Shield on the owner's PC) or a company proxy re-signs connections with a root that only the system store trusts. Python's certifi rejects it: every feed and the model API fail with `CERTIFICATE_VERIFY_FAILED`. MastHead injects `truststore` at startup (`masthead/tls.py`) so verification uses the system store. Verification is never turned off.
 
 ## State of the prototype
 
-Working and covered by tests (`tests/test_masthead.py`, 8 tests, no network and no model needed): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run.
+Covered by tests (`tests/`, 13 tests, no network and no model needed): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged.
+
+First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
+
+- Collect only: 43 collected, 41 after repeated links, all sources read, 0 tokens, 28 s.
+- Full run: 41 scored, 9 at or above 6.5, 5 after merging, 5 kept and written, briefings in 3 languages. 232,477 input and 58,065 output tokens (score 57,343/24,023; merge 1,772/370; write 173,362/33,672). 3 min 22 s.
 
 Never verified yet:
 
-- No real run: collection, scoring, writing and token counting have not run on real data through MastHead.
-- The starter domain's feeds were written from memory and never tested.
-- The starter model name (`claude-haiku-5-5`) was not tested against the API.
+- The starter domain's feeds (`templates/flight-sim`) were written from memory and never tested.
+- Cost in money: no prices in `domain.json`, so none is shown.
 
 ## Roadmap, in order
 

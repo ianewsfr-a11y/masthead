@@ -61,6 +61,36 @@ def test_collect_detail_counts_feeds_not_source_groups():
     )
 
 
+async def test_run_with_failed_sources_is_not_reported_as_a_plain_success(tmp_path, monkeypatch):
+    """A run that finished while some feeds failed must say so in the run list."""
+    from fastapi.testclient import TestClient
+
+    from masthead.demo import seed_demo_run
+    from masthead.domains import create_from_template
+    from masthead.server import create_app
+    from masthead.service import MastHeadService
+
+    monkeypatch.setenv("MASTHEAD_HOME", str(tmp_path))
+    domain = create_from_template("flight-sim")
+    run_id = await seed_demo_run(domain)
+    service = MastHeadService(domain)
+
+    def entry():
+        with TestClient(create_app(), headers={"host": "127.0.0.1:8765"}) as client:
+            return client.get("/api/domains/flight-sim/runs").json()["runs"][0]
+
+    service.run_store.update_meta(run_id, {"fetch_report": {"status": "success", "sources": []}})
+    clean = entry()
+    assert clean["status"] == "done" and clean["sources_failed"] == 0
+
+    service.run_store.update_meta(run_id, {"fetch_report": {"status": "partial_failure", "sources": [
+        {"source": "RSS Feeds", "status": "failure", "failures": {"A": "x", "B": "y"}},
+        {"source": "Google News", "status": "success", "item_count": 15},
+    ]}})
+    flagged = entry()
+    assert flagged["status"] == "incomplete" and flagged["sources_failed"] == 2
+
+
 def test_collect_detail_partial_group_and_clean_run():
     fetched = {
         "raw_before_merge": 40, "fetched": 38,
