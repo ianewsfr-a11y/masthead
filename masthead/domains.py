@@ -47,6 +47,11 @@ class Domain:
             value = {}
         return value if isinstance(value, dict) else {}
 
+    def write_meta(self, meta: dict[str, Any]) -> None:
+        tmp = self.meta_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(self.meta_path)
+
     @property
     def name(self) -> str:
         return str(self.meta().get("name") or self.id)

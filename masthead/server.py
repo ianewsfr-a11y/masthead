@@ -10,6 +10,9 @@ proxy, and needs a signed-in session for everything but sign-in and /healthz.
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -23,6 +26,7 @@ from . import config_view
 from .domains import DomainError, get_domain, list_domains
 from .env import DomainEnvironment
 from .runner import RunManager, failed_source_count
+from .schedule import Scheduler, parse_schedule
 from .service import MastHeadService
 from .web_auth import STATIC, ServerConfigError, ServerGuard, ServerSettings, local_refusal
 
@@ -30,15 +34,40 @@ __all__ = ["create_app", "ServerConfigError", "ServerSettings"]
 
 
 def create_app(client_factory=None, server: ServerSettings | None = None) -> FastAPI:
-    app = FastAPI(title="MastHead", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
-    env = DomainEnvironment()
-    manager = RunManager(env=env)
-    app.state.manager = manager
     guard = ServerGuard(server) if server is not None else None  # refuses to build without a password
     mode = "server" if guard else "local"
+    env = DomainEnvironment()
+    manager = RunManager(env=env)
 
     def service_for(domain_id: str) -> MastHeadService:
         return MastHeadService(get_domain(domain_id), client_factory=client_factory)
+
+    def start_full_run(domain_id: str) -> dict[str, Any]:
+        service = service_for(domain_id)
+        return manager.start(service, hours=service.context().config.collection.time_window_hours, until="full")
+
+    scheduler = Scheduler(start_run=start_full_run)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        task = asyncio.create_task(scheduler.run_forever())
+        try:
+            yield
+        finally:
+            task.cancel()
+
+    app = FastAPI(title="MastHead", version=__version__, docs_url=None, redoc_url=None, openapi_url=None,
+                  lifespan=lifespan)
+    app.state.manager = manager
+    app.state.scheduler = scheduler
+
+    def schedule_view(domain_id: str) -> dict[str, Any]:
+        view = scheduler.status(domain_id, datetime.now(timezone.utc))
+        last = view.get("last") or {}
+        job = manager.jobs.get(last.get("job_id") or "")
+        if job:  # the scheduled run's own result, while this server process knows it
+            last.update(run_status=job["status"], run_id=job["run_id"], error=job["error"])
+        return view
 
     @app.middleware("http")
     async def gate(request: Request, call_next):
@@ -131,7 +160,20 @@ def create_app(client_factory=None, server: ServerSettings | None = None) -> Fas
             "settings": config_view.settings_view(domain, service, key_available),
             "missing_env": missing,
             "warnings": warnings,
+            "schedule": schedule_view(domain.id),
         }
+
+    @app.post("/api/domains/{domain_id}/schedule")
+    async def save_schedule(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        domain = get_domain(domain_id)
+        meta = domain.meta()
+        if body.get("remove") is True:
+            meta.pop("schedule", None)
+        else:
+            meta["schedule"] = parse_schedule(body).as_dict()
+        domain.write_meta(meta)
+        scheduler.forget(domain_id)
+        return await domain_overview(domain_id)
 
     @app.post("/api/domains/{domain_id}/sources")
     async def toggle_source(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:

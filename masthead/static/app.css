@@ -208,3 +208,9 @@ pre.cmd { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-r
 .login-error { color: var(--orange); font-weight: 600; }
 .login-error::before { content: "⚠ "; }
 .side-foot .btn { margin-top: 6px; justify-content: center; }
+
+/* Schedule panel */
+.field input[type="time"], .field select, .field input[type="text"] { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); max-width: 100%; }
+.field input[type="time"] { width: 140px; font-family: var(--mono); }
+.switch-field { flex-direction: row; align-items: center; gap: 12px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 10px; }
