@@ -12,6 +12,7 @@ from uuid import uuid4
 from src.ai.tokens import get_usage_snapshot
 from src.mcp.errors import HorizonMcpError
 
+from . import config_view
 from .service import MastHeadService
 
 STAGES = [
@@ -26,6 +27,26 @@ UNTIL = {"collect": 1, "score": 2, "select": 3, "full": 5}
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def failed_source_count(report: dict[str, Any]) -> int:
+    """Failed sources as the user sees them: each feed counts, not Horizon's source groups."""
+    count = 0
+    for group in report.get("sources") or []:
+        if group.get("failures"):
+            count += len(group["failures"])
+        elif group.get("status") == "failure":
+            count += 1
+    return count
+
+
+def collect_detail(fetched: dict[str, Any], enabled_sources: int) -> str:
+    report = fetched.get("fetch_report") or {}
+    failed = failed_source_count(report)
+    detail = f"{fetched['raw_before_merge']} collected, {fetched['fetched']} after removing repeated links"
+    if failed:
+        detail += f", {failed} of {max(enabled_sources, failed)} sources failed"
+    return detail
 
 
 class RunManager:
@@ -126,11 +147,10 @@ class RunManager:
                 hours=job["hours"], horizon_path=workspace))
             job["run_id"] = fetched["run_id"]
             report = fetched.get("fetch_report") or {}
-            failed = report.get("failed", 0)
-            stage_of["collect"]["detail"] = (
-                f"{fetched['raw_before_merge']} collected, {fetched['fetched']} after removing repeated links"
-                + (f", {failed} of {report.get('attempted')} sources failed" if failed else "")
+            enabled = sum(
+                1 for row in config_view.sources_view(service.domain, service.context().config) if row["enabled"]
             )
+            stage_of["collect"]["detail"] = collect_detail(fetched, enabled)
             if fetched["fetched"] == 0 and report.get("status") == "failure":
                 stop_here(None)
                 stage_of["collect"]["status"] = "failed"

@@ -9,7 +9,7 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from . import __version__
+from . import __version__, tls
 from .domains import DomainError, ensure_starter_domain, get_domain, home_dir, import_domain, list_domains
 
 
@@ -81,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     lst.set_defaults(func=_list)
 
     args = parser.parse_args(argv)
+    tls.use_system_trust()
     if args.command is None:
         args = parser.parse_args(["serve", *(argv or [])])
     try:
