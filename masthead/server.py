@@ -21,6 +21,7 @@ from . import config_view
 from .domains import DomainError, get_domain, list_domains
 from .env import DomainEnvironment
 from .runner import RunManager, failed_source_count
+from . import new_domain_api
 from .service import MastHeadService
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -78,6 +79,8 @@ def create_app(client_factory=None) -> FastAPI:
     async def value_error(_: Request, exc: ValueError):
         return JSONResponse({"error": str(exc)}, status_code=400)
 
+    new_domain_api.install(app, manager)
+
     # -- domains -----------------------------------------------------------
 
     @app.get("/api/domains")
@@ -85,7 +88,8 @@ def create_app(client_factory=None) -> FastAPI:
         items = []
         for domain in list_domains():
             meta = domain.meta()
-            entry: dict[str, Any] = {"id": domain.id, "name": domain.name, "description": meta.get("description")}
+            entry: dict[str, Any] = {"id": domain.id, "name": domain.name, "description": meta.get("description"),
+                                     "draft": meta.get("draft") is True}
             try:
                 service = MastHeadService(domain, client_factory=client_factory)
                 ctx = service.context()
@@ -122,6 +126,7 @@ def create_app(client_factory=None) -> FastAPI:
             missing.insert(0, ctx.config.ai.api_key_env)
         return {
             "id": domain.id,
+            "draft": domain.meta().get("draft") is True,
             "name": domain.name,
             "description": domain.meta().get("description"),
             "folder": str(domain.path),

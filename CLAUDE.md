@@ -40,6 +40,7 @@ Ambition set by the owner: be the reference interface of its kind.
 - `masthead/server.py`: JSON API and static files. Loopback only; refuses foreign Host and Origin headers; strict Content-Security-Policy (no inline styles or scripts).
 - `masthead/demo.py`: a run of invented stories, every title starting with `[Demo]`, pushed through Horizon's real selection.
 - `masthead/cli.py`: `masthead` (serve), `masthead import`, `masthead demo`, `masthead domains`.
+- `masthead/new_domain.py`, `masthead/new_domain_api.py`, `masthead/profile_form.py`, `masthead/static/new-domain.js`: the New domain screen (draft domain marked `"draft": true` in `domain.json`; sources tested by Horizon's collector in a scratch folder; suggestions from `src/setup/ai_recommend.py`; a form that writes Horizon's profile files, checked by Horizon's `ProfileRegistry`).
 - `masthead/env.py`: applies one domain's `.env` when its run starts, after removing the previous domain's values. `MastHeadService._build_context` skips Horizon's own `.env` loader.
 - `masthead/tls.py`: HTTPS certificates checked against the system store (truststore).
 
@@ -77,7 +78,7 @@ python -m venv .venv
 
 ## State of the prototype
 
-Covered by tests (`tests/`, 22 tests, no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
+Covered by tests (`tests/`, 35 tests, including 13 for New domain; no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
 
 First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
 
@@ -91,6 +92,14 @@ Second full run, 14 November 2026, after the per-domain key fix (the key came on
 - Writing was 64% of the input tokens with 3 stories kept (75% with 5): its share grows with the number of stories kept.
 - Found after it: the domain's values stayed in the process after its run, so Horizon's own check counted that key for another domain and the "No AI key found" notice disappeared there. Fixed: values are removed when the run ends, and a domain's missing key is reported from its own `.env`.
 
+New domain, checked on 14 November 2026 in a headless browser on a scratch folder, with real feeds:
+
+- Step 1: id filled from the name, model and languages copied from an existing domain; the draft is listed as such.
+- Step 2: `flightsimulator.com/feed/` tested as Failed (500) and could not be added; FSElite tested as Works (10 stories in 7 days) and added. Hacker News, Reddit and Telegram shown off. The suggestion button is disabled without a key in the draft's folder.
+- Step 3: the rules form wrote `match.md` with the typed text; 100 characters for scoring is refused (by the browser, and by the server in the tests).
+- Step 4: Collect only, 10 collected, 0 tokens; then Create; a second draft discarded. No horizontal scroll at phone width; no console error.
+- Not checked live: Horizon's suggestions and "Score and select" on a draft (both need a key in the draft's own `.env`; covered by tests with a stand-in).
+
 Never verified yet:
 
 - The starter domain's feeds (`templates/flight-sim`): in a collect on 14 November 2026, FSElite and MSFS Addons answered; `flightsimulator.com/feed/` answered 500 and was replaced by the mirror the owner's config uses, which worked there but not yet in the starter.
@@ -101,7 +110,7 @@ Never verified yet:
 Only what Horizon already does, shown and driven from the interface.
 
 1. First real run with the owner's existing Horizon configuration, imported through `masthead import`. Fix whatever breaks. Done on 14 November 2026 (see State of the prototype).
-2. Create a domain from the interface ("New domain", plan approved 14 November 2026):
+2. Create a domain from the interface ("New domain", plan approved 14 November 2026; built 14 November 2026, see State of the prototype):
    1. **Subject:** name, id, short description, languages, model (defaults from an existing domain). Says where to put the key; never asks for it.
    2. **Sources:** added by hand, or suggested by Horizon's own recommendation function (`src/setup/ai_recommend.py`; tokens measured and shown). Every source is tested with Horizon's collector on that source alone before it can be ticked; a failing source stays unticked. Hacker News, Reddit and Telegram are switched off explicitly and shown. No automatic feed discovery from a website. No ready-made source lists for now.
    3. **Editorial rules:** a form that fills Horizon's profile files (`profile.json`, `match.md`, `analysis.md`, `enrichment.md`), shown and editable as text. No draft written by the model.
