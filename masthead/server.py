@@ -19,6 +19,7 @@ from src.mcp.errors import HorizonMcpError
 from . import __version__
 from . import config_view
 from .domains import DomainError, get_domain, list_domains
+from .env import DomainEnvironment
 from .runner import RunManager, failed_source_count
 from .service import MastHeadService
 
@@ -35,7 +36,8 @@ def _host_only(value: str) -> str:
 
 def create_app(client_factory=None) -> FastAPI:
     app = FastAPI(title="MastHead", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
-    manager = RunManager()
+    env = DomainEnvironment()
+    manager = RunManager(env=env)
     app.state.manager = manager
 
     def service_for(domain_id: str) -> MastHeadService:
@@ -107,15 +109,22 @@ def create_app(client_factory=None) -> FastAPI:
         service = MastHeadService(domain, client_factory=client_factory)
         check = await service.validate_config(horizon_path=service.workspace)
         ctx = service.context()
+        # Horizon checks the process environment; the domain's own .env counts too.
+        missing = [name for name in check["missing_env"] if not env.is_available(domain, name)]
+        warnings = [
+            text for text in check["warnings"]
+            if not (text.startswith("GITHUB_TOKEN ") and env.is_available(domain, "GITHUB_TOKEN"))
+        ]
+        key_available = env.is_available(domain, ctx.config.ai.api_key_env)
         return {
             "id": domain.id,
             "name": domain.name,
             "description": domain.meta().get("description"),
             "folder": str(domain.path),
             "sources": config_view.sources_view(domain, ctx.config),
-            "settings": config_view.settings_view(domain, service),
-            "missing_env": check["missing_env"],
-            "warnings": check["warnings"],
+            "settings": config_view.settings_view(domain, service, key_available),
+            "missing_env": missing,
+            "warnings": warnings,
         }
 
     @app.post("/api/domains/{domain_id}/sources")

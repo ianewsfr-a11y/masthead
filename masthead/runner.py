@@ -13,6 +13,7 @@ from src.ai.tokens import get_usage_snapshot
 from src.mcp.errors import HorizonMcpError
 
 from . import config_view
+from .env import DomainEnvironment
 from .service import MastHeadService
 
 STAGES = [
@@ -52,9 +53,10 @@ def collect_detail(fetched: dict[str, Any], enabled_sources: int) -> str:
 class RunManager:
     """One run at a time: token usage is counted process-wide by Horizon."""
 
-    def __init__(self) -> None:
+    def __init__(self, env: Any = None) -> None:
         self.jobs: dict[str, dict[str, Any]] = {}
         self._task: asyncio.Task | None = None
+        self.env = env if env is not None else DomainEnvironment()
 
     def active(self) -> dict[str, Any] | None:
         for job in self.jobs.values():
@@ -67,6 +69,8 @@ class RunManager:
             raise RuntimeError("A run is already in progress.")
         if until not in UNTIL:
             raise ValueError("Unknown stopping point.")
+        # Only this domain's .env values are in the environment while it runs.
+        self.env.apply(service.domain)
         job = {
             "id": uuid4().hex[:12],
             "domain": service.domain.id,
