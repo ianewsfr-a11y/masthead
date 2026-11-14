@@ -104,7 +104,7 @@ tr.kept td.score { color: var(--amber); }
 td.story { color: var(--muted); }
 tr.kept td.story { font-weight: 600; color: var(--text); }
 td.meta { font-size: 13px; color: var(--muted); white-space: nowrap; }
-.decisions { min-width: 700px; }
+.decisions { min-width: 560px; }
 .decisions tbody tr { cursor: pointer; }
 .decisions tbody tr:hover td { background: #18203080; }
 .decisions tbody tr[aria-selected="true"] td { background: var(--panel-2); }
