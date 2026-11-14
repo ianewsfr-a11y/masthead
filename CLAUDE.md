@@ -77,13 +77,19 @@ python -m venv .venv
 
 ## State of the prototype
 
-Covered by tests (`tests/`, 19 tests, no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
+Covered by tests (`tests/`, 22 tests, no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
 
 First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
 
 - Collect only: 43 collected, 41 after repeated links, all sources read, 0 tokens, 28 s.
 - Full run: 41 scored, 9 at or above 6.5, 5 after merging, 5 kept and written, briefings in 3 languages. 232,477 input and 58,065 output tokens (score 57,343/24,023; merge 1,772/370; write 173,362/33,672). 3 min 22 s.
 - Writing is about three quarters of the input tokens (173,362 of 232,477), and it is multiplied by the number of languages: each kept story is written once per language. A trial run that stops before writing therefore costs about a quarter of a full run.
+
+Second full run, 14 November 2026, after the per-domain key fix (the key came only from the domain's `.env`; nothing in the shell):
+
+- 35 collected, 35 scored, 6 at or above 6.5, 3 after merging, 3 kept and written in 3 languages. 137,792 input and 40,346 output tokens (score 49,009/20,473; merge 1,263/280; write 87,520/19,593). 2 min 42 s.
+- Writing was 64% of the input tokens with 3 stories kept (75% with 5): its share grows with the number of stories kept.
+- Found after it: the domain's values stayed in the process after its run, so Horizon's own check counted that key for another domain and the "No AI key found" notice disappeared there. Fixed: values are removed when the run ends, and a domain's missing key is reported from its own `.env`.
 
 Never verified yet:
 
