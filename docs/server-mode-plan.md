@@ -1,6 +1,6 @@
 # Server mode: plan for later
 
-**Status: postponed** (owner's decision, 14 November 2026). MastHead is a local application for now. This page keeps the plan so the work can resume without starting over.
+**Status: postponed, under "Ideas, not planned" in CLAUDE.md** (owner's decisions, 14 November 2026). MastHead is a local application for now, and an interface for Horizon only: server mode goes beyond what Horizon does, so it is built only if the owner asks. This page keeps the plan so the work can resume without starting over.
 
 A first implementation exists on the branch `feat/server-mode` (pull request #2, not merged, kept as a draft). It was built and checked on one machine before the decision changed. See [State of the branch](#state-of-the-branch).
 

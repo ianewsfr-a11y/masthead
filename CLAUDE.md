@@ -4,6 +4,10 @@ Local web console for [Horizon](https://github.com/Thysrael/Horizon), an open-so
 
 Ambition set by the owner: be the reference interface of its kind.
 
+## The first rule
+
+**MastHead is an interface for Horizon, nothing more.** It shows and drives what Horizon already does. It adds no new function to the engine. Before adding anything that goes beyond this rule, ask the owner. (Set by the owner on 14 November 2026.)
+
 ## Working rules
 
 - Talk to the owner (Rodolphe) in French. Code, comments, interface text, commit messages and docs are in English.
@@ -19,7 +23,7 @@ Ambition set by the owner: be the reference interface of its kind.
 - Scope: Horizon's own features only. Blog automation is out of scope.
 - Central feature: switch between watch domains and create a new one.
 - Decided on 14 November 2026: **local application only, for now.** Each user runs MastHead on their own computer and opens it in their browser. The user spends their own AI credit or uses a local model. Nothing leaves their machine except Horizon's own calls to sources and to the model.
-- Server mode (the same tool on the user's own VPS or NAS) is postponed: see "Later" at the end of the roadmap. A hosted service run by us for all users (accounts, billing, storing customers' keys) is postponed further, until the open-source tool shows demand; do not build towards it.
+- Server mode (the same tool on the user's own VPS or NAS) is postponed: see "Ideas, not planned" after the roadmap. A hosted service run by us for all users (accounts, billing, storing customers' keys) is postponed further, until the open-source tool shows demand; do not build towards it.
 - One domain = one Horizon configuration and one data folder (own languages, model, schedule, cost).
 - Settings in three levels: essential (about ten), advanced (about twenty), search across all 181.
 - Visual style: dark background `#0B0E14`, panels `#121722`, lines `#263043`, amber accent `#F2A93B`, blue `#7CB8FF`, orange `#FF9D6C`. Fonts: Space Grotesk (headings), Inter (body), JetBrains Mono (figures), with local fallbacks. No remote fonts or assets.
@@ -65,7 +69,7 @@ python -m venv .venv
 - Horizon reports all RSS feeds as a single source ("RSS Feeds") in its fetch report; per-feed failures are only in `failures`. MastHead counts feeds, not groups.
 - Horizon's `web_search` (DuckDuckGo, no key) returns an empty list on failure and only logs a warning. The model also decides on its own whether to search: in the first real run, 1 story out of 5 used it.
 - Horizon loads each domain's `.env` into the process environment with `override=False`: the first value loaded wins for the life of the process, across domains. With two domains, the first one opened supplied its key to the other. Fixed in MastHead (`masthead/env.py`): Horizon's loader is skipped, and a domain's `.env` is applied only when one of its runs starts, after removing the previous domain's values.
-- Prompt overrides copied over Horizon's files (such as the owner's `overrides/deduplication.py` in virtual-flight) do not apply in MastHead, which uses the installed Horizon. Decided on 14 November 2026: MastHead will not support Python overrides. The right form is a per-domain text setting for the duplicate-merging rules, at roadmap step 7.
+- Prompt overrides copied over Horizon's files (such as the owner's `overrides/deduplication.py` in virtual-flight) do not apply in MastHead, which uses the installed Horizon. Decided on 14 November 2026: MastHead will not support Python overrides. The right form would be a per-domain text setting for the duplicate-merging rules; it is under "Ideas, not planned".
 
 ## Known machine traps
 
@@ -79,7 +83,7 @@ First real run, 14 November 2026, owner's virtual-flight config imported as doma
 
 - Collect only: 43 collected, 41 after repeated links, all sources read, 0 tokens, 28 s.
 - Full run: 41 scored, 9 at or above 6.5, 5 after merging, 5 kept and written, briefings in 3 languages. 232,477 input and 58,065 output tokens (score 57,343/24,023; merge 1,772/370; write 173,362/33,672). 3 min 22 s.
-- Writing is about three quarters of the input tokens (173,362 of 232,477), and it is multiplied by the number of languages: each kept story is written once per language. The cost estimate (roadmap step 4) must account for this.
+- Writing is about three quarters of the input tokens (173,362 of 232,477), and it is multiplied by the number of languages: each kept story is written once per language. A trial run that stops before writing therefore costs about a quarter of a full run.
 
 Never verified yet:
 
@@ -88,18 +92,27 @@ Never verified yet:
 
 ## Roadmap, in order
 
+Only what Horizon already does, shown and driven from the interface.
+
 1. First real run with the owner's existing Horizon configuration, imported through `masthead import`. Fix whatever breaks. Done on 14 November 2026 (see State of the prototype).
-2. Create a domain from the interface (subject, proposed and tested sources, editorial rules, trial run).
-3. Test a source before adding it.
-4. Cost estimate before a run, from previous runs.
-5. Edit model, languages and the amount of text shown to the model from the interface.
-6. Advanced settings level, then search across all settings.
-7. Settings currently fixed in Horizon's code that matter: duplicate-merging rules (as a per-domain text setting, not Python overrides), number of web searches.
-8. Compare two runs; return to an earlier configuration.
+2. Create a domain from the interface ("New domain", plan approved 14 November 2026):
+   1. **Subject:** name, id, short description, languages, model (defaults from an existing domain). Says where to put the key; never asks for it.
+   2. **Sources:** added by hand, or suggested by Horizon's own recommendation function (`src/setup/ai_recommend.py`; tokens measured and shown). Every source is tested with Horizon's collector on that source alone before it can be ticked; a failing source stays unticked. Hacker News, Reddit and Telegram are switched off explicitly and shown. No automatic feed discovery from a website. No ready-made source lists for now.
+   3. **Editorial rules:** a form that fills Horizon's profile files (`profile.json`, `match.md`, `analysis.md`, `enrichment.md`), shown and editable as text. No draft written by the model.
+   4. **Trial run:** Collect only, then score and select without writing; the inspector and the replay to adjust the minimum score. Then create the domain or discard it (the domain is a marked draft until then).
+3. Edit model, languages and the amount of text shown to the model from the interface (Horizon settings).
+4. Advanced settings level, then search across all of Horizon's settings.
 
-Later, not before the owner asks:
+## Ideas, not planned
 
-- Server mode: the same tool on the user's own VPS or NAS, with sign-in, HTTPS through Caddy and scheduled runs. Requirements and plan in `docs/server-mode-plan.md`. A first implementation sits on the branch `feat/server-mode` (pull request #2, draft, not merged); do not merge it and do not build on it until the owner resumes this work. Local mode must never lose its loopback-only protection.
+Outside the first rule: not built unless the owner asks.
+
+- Cost estimate before a run, from previous runs. Horizon counts tokens but does not estimate. If it is built, writing is about three quarters of the input tokens and is multiplied by the number of languages.
+- Settings currently fixed in Horizon's code: duplicate-merging rules (the right form would be a per-domain text setting, not Python overrides), number of web searches. This would change the engine.
+- Compare two runs; return to an earlier configuration.
+- Ready-made source lists (Horizon's presets come from its author's site, `horizon1123.top`: a call outside the sources and the model).
+- Automatic feed discovery from a website; a draft of the editorial rules written by the model.
+- Server mode: the same tool on the user's own VPS or NAS, with sign-in, HTTPS through Caddy and scheduled runs. Requirements, plan and state in `docs/server-mode-plan.md`. A first implementation sits on the branch `feat/server-mode` (pull request #2, draft, not merged); do not merge it and do not build on it until the owner resumes this work. Local mode must never lose its loopback-only protection.
 
 ## Open decisions (ask the owner, do not decide)
 
