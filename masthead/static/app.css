@@ -189,8 +189,22 @@ pre.cmd { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-r
 
 @media (max-width: 860px) {
   .side { flex: 1 1 100%; border-right: 0; border-bottom: 1px solid var(--line); gap: 16px; padding: 16px; }
-  .side-foot { display: none; }
+  .side-foot { padding: 0; border: 0; }
+  .side-foot .eyebrow, .side-foot-text { display: none; }
   .nav { flex-direction: row; flex-wrap: wrap; }
   main { padding: 24px 16px 40px; }
   .page-head h1 { font-size: 30px; }
 }
+
+/* Sign-in page (server mode) */
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.login { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 24px; padding: 32px 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.login h1 { font: 700 26px var(--head); }
+.login .brand { padding: 0; }
+.login-form { display: flex; flex-direction: column; gap: 18px; }
+.login-form input[type="password"] { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.login-form input[aria-invalid="true"] { border-color: var(--orange); }
+.login-form .btn { justify-content: center; }
+.login-error { color: var(--orange); font-weight: 600; }
+.login-error::before { content: "⚠ "; }
+.side-foot .btn { margin-top: 6px; justify-content: center; }

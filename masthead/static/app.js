@@ -86,6 +86,7 @@
     } catch (error) {
       throw new Error('MastHead is not answering. Is the server still running in your terminal?');
     }
+    if (response.status === 401) { window.location.replace('/login'); throw new Error('Sign in again.'); }
     let data = null;
     try { data = await response.json(); } catch (error) { /* not JSON */ }
     if (!response.ok) throw new Error((data && data.error) || `Request failed (${response.status}).`);
@@ -709,6 +710,21 @@
     }
   }
 
+  // Server mode: say where MastHead runs, and offer to sign out.
+  async function setupSession() {
+    let session;
+    try { session = await api.get('/api/session'); } catch (error) { return; }
+    if (session.mode !== 'server') return;
+    document.getElementById('side-foot-label').textContent = 'Server';
+    document.getElementById('side-foot-text').textContent = 'Runs on your server. Your AI key stays there and is never shown.';
+    const button = document.getElementById('sign-out');
+    button.hidden = false;
+    button.addEventListener('click', async () => {
+      try { await api.post('/api/logout', {}); } finally { window.location.replace('/login'); }
+    });
+  }
+
   window.addEventListener('hashchange', render);
+  setupSession();
   render();
 })();

@@ -1,13 +1,15 @@
-"""The local HTTP server: a JSON API over MastHeadService, and the static interface.
+"""The HTTP server: a JSON API over MastHeadService, and the static interface.
 
-It listens on the loopback address only. Requests that do not come from the
-local interface itself are refused, so a web page open in the same browser
-cannot start a run or read a briefing.
+Local mode (the default) listens on the loopback address only, and refuses
+requests that do not come from the local interface itself, so a web page open
+in the same browser cannot start a run or read a briefing.
+
+Server mode (see web_auth) answers on one configured host name behind an HTTPS
+proxy, and needs a signed-in session for everything but sign-in and /healthz.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -22,36 +24,27 @@ from .domains import DomainError, get_domain, list_domains
 from .env import DomainEnvironment
 from .runner import RunManager, failed_source_count
 from .service import MastHeadService
+from .web_auth import STATIC, ServerConfigError, ServerGuard, ServerSettings, local_refusal
 
-STATIC = Path(__file__).resolve().parent / "static"
-LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
-
-
-def _host_only(value: str) -> str:
-    value = value.strip().lower()
-    if value.startswith("["):
-        return value.split("]")[0] + "]"
-    return value.split(":")[0]
+__all__ = ["create_app", "ServerConfigError", "ServerSettings"]
 
 
-def create_app(client_factory=None) -> FastAPI:
+def create_app(client_factory=None, server: ServerSettings | None = None) -> FastAPI:
     app = FastAPI(title="MastHead", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
     env = DomainEnvironment()
     manager = RunManager(env=env)
     app.state.manager = manager
+    guard = ServerGuard(server) if server is not None else None  # refuses to build without a password
+    mode = "server" if guard else "local"
 
     def service_for(domain_id: str) -> MastHeadService:
         return MastHeadService(get_domain(domain_id), client_factory=client_factory)
 
     @app.middleware("http")
-    async def local_only(request: Request, call_next):
-        if _host_only(request.headers.get("host", "")) not in LOCAL_HOSTS:
-            return JSONResponse({"error": "MastHead only answers on this computer."}, status_code=403)
-        origin = request.headers.get("origin")
-        if origin and _host_only(origin.split("://", 1)[-1]) not in LOCAL_HOSTS:
-            return JSONResponse({"error": "Cross-site requests are refused."}, status_code=403)
-        if request.method not in ("GET", "HEAD") and "application/json" not in request.headers.get("content-type", ""):
-            return JSONResponse({"error": "Requests that change something must be JSON."}, status_code=415)
+    async def gate(request: Request, call_next):
+        refusal = guard.refusal(request) if guard else local_refusal(request)
+        if refusal is not None:
+            return refusal
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -77,6 +70,19 @@ def create_app(client_factory=None) -> FastAPI:
     @app.exception_handler(ValueError)
     async def value_error(_: Request, exc: ValueError):
         return JSONResponse({"error": str(exc)}, status_code=400)
+
+    # -- health and session ------------------------------------------------
+
+    @app.get("/healthz")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/api/session")
+    async def session(request: Request) -> dict[str, Any]:
+        return {"mode": mode, "signed_in": guard.signed_in(request) if guard else True}
+
+    if guard:
+        guard.install_routes(app)
 
     # -- domains -----------------------------------------------------------
 
