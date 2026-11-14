@@ -42,7 +42,8 @@ Ambition set by the owner: be the reference interface of its kind.
 - `masthead/server.py`: JSON API and static files. Loopback only; refuses foreign Host and Origin headers; strict Content-Security-Policy (no inline styles or scripts).
 - `masthead/demo.py`: a run of invented stories, every title starting with `[Demo]`, pushed through Horizon's real selection.
 - `masthead/cli.py`: `masthead` (serve), `masthead import`, `masthead demo`, `masthead domains`.
-- `masthead/new_domain.py`, `masthead/new_domain_api.py`, `masthead/profile_form.py`, `masthead/static/new-domain.js`: the New domain screen (draft domain marked `"draft": true` in `domain.json`; sources tested by Horizon's collector in a scratch folder; suggestions from `src/setup/ai_recommend.py`; a form that writes Horizon's profile files, checked by Horizon's `ProfileRegistry`).
+- `masthead/new_domain.py`, `masthead/new_domain_api.py`, `masthead/profile_form.py`: creating and editing a domain (draft marked `"draft": true` in `domain.json`; pasted lines read as sources from their text only; sources tested by Horizon's collector in a scratch folder; suggestions from `src/setup/ai_recommend.py`; a form that writes Horizon's profile files, checked by Horizon's `ProfileRegistry`; hand-written profiles, `"profile_form"` absent from `domain.json`, are never overwritten by the form without `replace`).
+- The domain editor, one screen to create and to change a domain (`#/new`, then `#/edit/<id>`): `static/domain-editor.js` (steps, what is missing, create or discard, Subject and AI, Settings, Trial run), `static/editor-sources.js`, `static/editor-rules.js`, `static/ui-kit.js` (`<dialog>` confirmations, unsaved-changes tracker). One Save button per step; moving between steps keeps what was typed; leaving with unsaved changes asks; the screen being replaced is inert while the next one loads.
 - `masthead/env.py`: applies a domain's values (shared keys, then its own `.env`) while one of its runs goes, and removes them afterwards; tells where a key comes from without reading it out. `MastHeadService._build_context` skips Horizon's own `.env` loader.
 - `masthead/keys.py`, `masthead/ai_api.py`, `masthead/static/ai-settings.js`: providers from Horizon's table, the shared keys file, and the AI keys and AI choice panels. `config_view.ai_choice` writes the `ai` section of Horizon's config.
 - `masthead/tls.py`: HTTPS certificates checked against the system store (truststore).
@@ -58,6 +59,9 @@ python -m venv .venv
 ```
 
 ## Rules for the interface
+
+- Every piece of interface work starts by consulting Modern Web Guidance (https://github.com/GoogleChrome/modern-web-guidance, by the Chrome, Edge, Firefox and MDN teams): `npx modern-web-guidance@latest search "<2-5 words>"`, then `retrieve "<id>"`, for each pattern touched (forms, dialogs, tabs, notifications, accessibility...). Follow it within our constraints: no polyfill or library loaded from outside (the CSP allows only our own files), no inline script or style. Decided by the owner on 14 November 2026.
+- Before saying an interface change is done, check every screen that shows the changed data, on the path the owner actually takes, in a browser.
 
 - Insert any text coming from a feed or a model as text, never as HTML.
 - Never show a number that was not measured. Cost in money appears only if the user gave their model's prices in `domain.json`; no price is hard-coded.
@@ -81,7 +85,7 @@ python -m venv .venv
 
 ## State of the prototype
 
-Covered by tests (`tests/`, 57 tests, including 13 for New domain and 22 for AI keys and AI choice; no model needed; one test reaches the network; every test gets its own MastHead folder): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
+Covered by tests (`tests/`, 75 tests, including 13 for New domain, 23 for AI keys and AI choice and 17 for the domain editor; no model needed; one test reaches the network; every test gets its own MastHead folder): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
 
 First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
 
@@ -98,12 +102,23 @@ Second full run, 14 November 2026, after the per-domain key fix (the key came on
 AI keys and AI choice, checked on 14 November 2026 in a headless browser on a scratch folder, with a fake key (no model call):
 
 - A key saved in Domains, AI keys shows as Saved; it is in `keys.env` and appeared in no page's HTML at any step.
-- Sources and settings: Anthropic with the shared key shows Key found; switching to OpenAI shows No key and the missing-key notice; Ollama fills its local address; back to Anthropic finds the shared key again.
+- (Then in Sources and settings, now the editor's Subject and AI step:) Anthropic with the shared key shows Key found; switching to OpenAI shows No key and the missing-key notice; Ollama fills its local address; back to Anthropic finds the shared key again.
 - New domain with DeepSeek: the draft shows its key panel; deleting the saved key removes it from the file. No console error.
 - The same AI panel (provider, model, key) is on a draft's page, under "1. Subject" ("AI and key"); checked on the owner's draft `business-school` (view only) and with a full round trip on a scratch draft (Gemini saved, key entered, suggestions enabled, key absent from the page).
 - Not checked: a real run with a key entered in the interface, or with another provider than Anthropic.
 
-New domain, checked on 14 November 2026 in a headless browser on a scratch folder, with real feeds:
+Domain editor, checked on 14 November 2026 in a headless browser on a scratch folder holding an imported copy of the owner's virtual-flight config, with real feeds:
+
+- Creation: id filled from the name; an invalid id is blocked in the form; the draft opens on Sources with "What is missing" listing key, sources and rules.
+- Sources: four pasted lines gave Works (FSElite, ticked), Failed (flightsimulator.com 500, cannot be ticked), Not a source, and Nothing in 7 days (FlyByWire releases, ticked); "Add the ticked sources" added two.
+- A switch changed shows "Unsaved changes" in the step and in the side steps; leaving for Runs opened "Leave without saving?"; Stay kept the change; Save cleared it.
+- Rules: focus moves to the step heading; the three essential questions saved; the preview shows the new text; textareas grow with their content (`field-sizing: content`).
+- Subject renamed: side menu and title follow. Settings: minimum score 7 saved. Trial: Collect only ran; Score and select stays off without a key and says why.
+- Discard: an application dialog, focus on Cancel, Esc keeps the draft. Create took the draft to Runs.
+- Imported domain: rules shown as "Hand-written files", opened on the files; the form shows a warning and saving it asks "Replace the hand-written rules?"; Cancel left the files untouched (dates unchanged).
+- No native browser dialog, no console error; no horizontal scroll at 390 px on Domains, editor, New domain, Runs (a long keys path widened Domains before; fixed).
+
+New domain (first version, replaced by the editor above), checked on 14 November 2026 in a headless browser on a scratch folder, with real feeds:
 
 - Step 1: id filled from the name, model and languages copied from an existing domain; the draft is listed as such.
 - Step 2: `flightsimulator.com/feed/` tested as Failed (500) and could not be added; FSElite tested as Works (10 stories in 7 days) and added. Hacker News, Reddit and Telegram shown off. The suggestion button is disabled without a key in the draft's folder.

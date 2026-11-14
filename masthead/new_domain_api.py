@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from . import new_domain
+from . import config_view, new_domain
 from .domains import get_domain
 from .profile_form import ProfileFormError
 from .runner import RunManager
@@ -21,6 +21,25 @@ def install(app: FastAPI, manager: RunManager) -> None:
     @app.exception_handler(ProfileFormError)
     async def form_error(_: Request, exc: ProfileFormError):
         return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.exception_handler(new_domain.HandWrittenRules)
+    async def hand_written(_: Request, exc: new_domain.HandWrittenRules):
+        return JSONResponse({"error": str(exc), "code": "HAND_WRITTEN_RULES"}, status_code=409)
+
+    @app.post("/api/domains/{domain_id}/subject")
+    async def subject(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        new_domain.update_subject(get_domain(domain_id), body)
+        return {"saved": True}
+
+    @app.post("/api/domains/{domain_id}/sources-enabled")
+    async def sources_enabled(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        config_view.set_sources_enabled(get_domain(domain_id), body.get("changes"))
+        return {"saved": True}
+
+    @app.post("/api/domains/{domain_id}/source-parse")
+    async def source_parse(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        get_domain(domain_id)
+        return {"lines": new_domain.parse_sources(body.get("text"))}
 
     def not_running(domain_id: str | None = None) -> JSONResponse | None:
         active = manager.active()
@@ -56,7 +75,7 @@ def install(app: FastAPI, manager: RunManager) -> None:
 
     @app.post("/api/domains/{domain_id}/profile-form")
     async def save_profile_form(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        return new_domain.save_profile_form(get_domain(domain_id), body.get("fields"))
+        return new_domain.save_profile_form(get_domain(domain_id), body.get("fields"), replace=body.get("replace") is True)
 
     @app.post("/api/domains/{domain_id}/profile-file")
     async def save_profile_file(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
