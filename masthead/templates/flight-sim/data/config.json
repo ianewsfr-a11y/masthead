@@ -1,0 +1,71 @@
+{
+  "ai": {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "temperature": 0.3,
+    "max_tokens": 4096,
+    "languages": ["en"]
+  },
+  "collection": {
+    "time_window_hours": 24
+  },
+  "processing": {
+    "profiles_dir": "profiles",
+    "default_profile": "flightsim-news",
+    "profile_settings": {
+      "flightsim-news": {
+        "threshold": 6.5,
+        "topic_dedup": true
+      }
+    }
+  },
+  "digest": {
+    "max_items": 6,
+    "category_groups": {
+      "community": {
+        "name": "Community news sites",
+        "limit": 4,
+        "categories": ["community-news"]
+      }
+    }
+  },
+  "sources": {
+    "hackernews": { "enabled": false },
+    "reddit": { "enabled": false },
+    "telegram": { "enabled": false },
+    "rss": [
+      {
+        "name": "Microsoft Flight Simulator",
+        "url": "https://www.flightsimulator.com/feed/",
+        "enabled": true,
+        "category": "official",
+        "profile": "flightsim-news"
+      },
+      {
+        "name": "FSElite",
+        "url": "https://fselite.net/feed/",
+        "enabled": true,
+        "category": "community-news",
+        "profile": "flightsim-news"
+      },
+      {
+        "name": "MSFS Addons",
+        "url": "https://msfsaddons.com/feed/",
+        "enabled": true,
+        "category": "community-news",
+        "profile": "flightsim-news"
+      }
+    ],
+    "github": [
+      {
+        "type": "repo_releases",
+        "owner": "flybywiresim",
+        "repo": "aircraft",
+        "enabled": true,
+        "category": "open-source",
+        "profile": "flightsim-news"
+      }
+    ]
+  }
+}
