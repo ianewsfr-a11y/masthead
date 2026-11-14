@@ -9,6 +9,8 @@ dependencies = [
     "horizon @ git+https://github.com/Thysrael/Horizon@323950050b079d054a009aa02198d89aae48e8da",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    # Verify HTTPS against the system's certificate store (antivirus, company proxies).
+    "truststore>=0.10",
 ]
 
 [project.optional-dependencies]

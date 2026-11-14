@@ -308,7 +308,7 @@
     not_scored: ['Not scored', 'idle', 'dash'],
   };
   const RUN_STATUS = {
-    done: ['Success', 'ok', 'check'], failed: ['Failed', 'warn', 'block'], cancelled: ['Stopped', 'idle', 'dash'],
+    done: ['Success', 'ok', 'check'], incomplete: ['Sources failed', 'warn', 'alert'], failed: ['Failed', 'warn', 'block'], cancelled: ['Stopped', 'idle', 'dash'],
     partial: ['Partial', 'idle', 'dash'], running: ['Running', 'hot', 'play'],
   };
 

@@ -19,7 +19,7 @@ from src.mcp.errors import HorizonMcpError
 from . import __version__
 from . import config_view
 from .domains import DomainError, get_domain, list_domains
-from .runner import RunManager
+from .runner import RunManager, failed_source_count
 from .service import MastHeadService
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -134,6 +134,10 @@ def create_app(client_factory=None) -> FastAPI:
     def run_entry(run: dict[str, Any]) -> dict[str, Any]:
         meta = run.get("meta", {})
         own = meta.get("masthead") or {}
+        sources_failed = failed_source_count(meta.get("fetch_report") or {})
+        status = own.get("status") or ("done" if meta.get("summary_generated_at") else "partial")
+        if status == "done" and sources_failed:
+            status = "incomplete"  # finished, but without everything it should have read
         return {
             "run_id": run["run_id"],
             "number": run.get("number"),
@@ -143,7 +147,8 @@ def create_app(client_factory=None) -> FastAPI:
             "collected": meta.get("raw_count_before_merge"),
             "scored": meta.get("scored_count"),
             "kept": meta.get("filtered_count"),
-            "status": own.get("status") or ("done" if meta.get("summary_generated_at") else "partial"),
+            "status": status,
+            "sources_failed": sources_failed,
             "until": own.get("until"),
             "error": own.get("error"),
             "demo": bool(meta.get("masthead_demo")),
