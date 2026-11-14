@@ -194,3 +194,22 @@ pre.cmd { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-r
   main { padding: 24px 16px 40px; }
   .page-head h1 { font-size: 30px; }
 }
+
+/* New domain */
+.wide-form { gap: 16px; max-width: 760px; }
+.wide-form h3, .stack > h3 { font: 600 16px var(--head); margin-top: 8px; }
+.field input[type="text"], .field select, .field textarea, .tabs + div textarea {
+  width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit;
+}
+.field textarea, .tabs + div textarea { resize: vertical; line-height: 1.45; }
+textarea.mono { font: 13px/1.5 var(--mono); }
+.switch-field { flex-direction: row; align-items: center; gap: 12px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.test-result { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.test-result .titles { flex-basis: 100%; margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.test-result .hint { flex-basis: 100%; overflow-wrap: anywhere; }
+.suggestion { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.suggestion .mono { overflow-wrap: anywhere; }
+.source-list .src-line { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.source-list .src-line > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.source-list li > span:last-child { font-family: var(--body); }

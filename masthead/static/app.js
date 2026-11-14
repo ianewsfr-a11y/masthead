@@ -137,7 +137,8 @@
       h('li', {}, h('button', {
         type: 'button', 'aria-pressed': domain.id === state.domain ? 'true' : 'false',
         onclick: () => { selectDomain(domain.id); },
-      }, h('span', {}, domain.name), domain.id === state.domain ? h('span', { class: 'tag' }, 'active') : null))));
+      }, h('span', {}, domain.name), domain.draft ? h('span', { class: 'tag' }, 'draft')
+        : domain.id === state.domain ? h('span', { class: 'tag' }, 'active') : null))));
   }
 
   function selectDomain(id) {
@@ -158,8 +159,10 @@
     if (domain.model) facts.push(domain.model);
     return h('div', { class: 'panel domain-bar' },
       h('div', { class: 'spread' },
-        h('div', { class: 'actions' }, h('span', { class: 'eyebrow' }, 'Domain'), h('span', { class: 'strong' }, domain.name), h('span', { class: 'mono muted' }, facts.join(' · '))),
-        h('a', { href: '#/domains', class: 'strong' }, 'All domains')));
+        h('div', { class: 'actions' }, h('span', { class: 'eyebrow' }, 'Domain'), h('span', { class: 'strong' }, domain.name),
+          domain.draft ? pill('Draft', 'warn', 'alert') : null, h('span', { class: 'mono muted' }, facts.join(' · '))),
+        domain.draft ? h('a', { href: `#/new/${encodeURIComponent(domain.id)}`, class: 'strong' }, 'Continue setting up')
+          : h('a', { href: '#/domains', class: 'strong' }, 'All domains')));
   }
 
   function pageHead(title, lede, ...actions) {
@@ -171,7 +174,8 @@
   // ---------------------------------------------------------------- Domains
   async function viewDomains() {
     const cards = state.domains.map((domain) => h('section', { class: `panel card ${domain.id === state.domain ? 'active' : ''}` },
-      h('div', { class: 'spread' }, h('h2', {}, domain.name), domain.id === state.domain ? pill('Active', 'hot') : null),
+      h('div', { class: 'spread' }, h('h2', {}, domain.name),
+        domain.draft ? pill('Draft', 'warn', 'alert') : domain.id === state.domain ? pill('Active', 'hot') : null),
       domain.description ? h('p', { class: 'hint' }, domain.description) : null,
       domain.problem
         ? notice('This domain cannot be loaded', domain.problem)
@@ -182,14 +186,16 @@
           fact('Runs', number(domain.runs)),
           fact('Last run', domain.last_run ? when(domain.last_run) : 'never')),
       h('div', { class: 'actions' },
+        domain.draft ? h('a', { class: 'btn ghost', href: `#/new/${encodeURIComponent(domain.id)}` }, 'Continue setting up') : null,
         h('button', { type: 'button', class: 'btn primary', onclick: () => { state.domain = domain.id; store.set(domain.id); window.location.hash = '#/runs'; } }, 'Open'),
         h('a', { class: 'btn', href: '#/sources', onclick: () => { state.domain = domain.id; store.set(domain.id); } }, 'Sources and settings'))));
 
     show(
-      pageHead('Domains', 'One domain per subject you follow. Each has its own sources, rules, languages, model and history.'),
+      pageHead('Domains', 'One domain per subject you follow. Each has its own sources, rules, languages, model and history.',
+        h('a', { class: 'btn primary', href: '#/new' }, 'New domain')),
       h('div', { class: 'cards' }, ...cards),
-      panel('Add a domain',
-        h('p', { class: 'hint' }, 'Creating a domain from this screen is not built yet. For now, bring an existing Horizon configuration from your terminal:'),
+      panel('Bring an existing Horizon setup',
+        h('p', { class: 'hint' }, 'If you already use Horizon from the command line, import its configuration from your terminal:'),
         h('pre', { class: 'cmd' }, 'masthead import --id boating --name "Boating" \\\n  --config path/to/config.json --profiles path/to/profiles'),
         h('p', { class: 'hint' }, 'Then reload this page.')));
   }
@@ -697,8 +703,9 @@
       await loadDomains();
       if (token !== state.token) return;
       renderChrome(route);
-      if (!state.domain && route !== 'domains') { window.location.hash = '#/domains'; return; }
+      if (!state.domain && route !== 'domains' && route !== 'new') { window.location.hash = '#/domains'; return; }
       if (route === 'domains') await viewDomains();
+      else if (route === 'new') await window.MastHeadNewDomain.view(argument ? decodeURIComponent(argument) : null, token);
       else if (route === 'sources') await viewSources();
       else if (route === 'briefing') await viewBriefing(argument);
       else await viewRuns(argument);
@@ -708,6 +715,13 @@
         h('div', {}, h('button', { type: 'button', class: 'btn', onclick: render }, 'Try again')));
     }
   }
+
+  // Shared with new-domain.js, which draws the New domain screen with the same helpers.
+  window.MastHead = {
+    h, icon, pill, notice, fact, panel, api, toast, show, pageHead, plural, number, when, state, store, RUN_STATUS,
+    isCurrent: (token) => token === state.token,
+    openDomain: (id, hash) => { state.domain = id; store.set(id); window.location.hash = hash; },
+  };
 
   window.addEventListener('hashchange', render);
   render();

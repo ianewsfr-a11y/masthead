@@ -44,6 +44,22 @@ MastHead never asks for a key and never shows one. Horizon reads it from the env
 ANTHROPIC_API_KEY=...
 ```
 
+## Create a domain
+
+In *Domains*, press **New domain**:
+
+1. **Subject:** name, languages and model (copied from an existing domain; the key is never copied).
+2. **Sources:**
+   - Add them by hand, or ask Horizon to suggest some (this uses your model; the tokens are shown).
+   - Each source is tested with Horizon's own collector over the last 7 days before you can add it.
+3. **Editorial rules:** a form that writes Horizon's profile files. You can also edit the files as text.
+4. **Trial run:**
+   - *Collect only* calls no model.
+   - *Score and select* scores with the model but writes nothing.
+   - Then open the run in the inspector.
+
+The domain stays a draft until you press **Create the domain**. **Discard this draft** deletes it.
+
 ## Bring an existing Horizon setup
 
 ```bash
