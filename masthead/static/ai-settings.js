@@ -89,8 +89,10 @@
   // Provider and model fields, shared by the AI panel and the New domain screen.
   function modelFields(M, providers, current, prefix) {
     const listed = providers.some((p) => p.id === current.provider);
-    const select = M.h('select', { id: `${prefix}-provider` },
-      ...(listed ? [] : [M.h('option', { value: current.provider, disabled: true, selected: true }, `${current.provider} (set outside MastHead)`)]),
+    // Nothing chosen yet (New domain): an empty first choice, so nothing is pre-filled.
+    const placeholder = !current.provider ? [M.h('option', { value: '', selected: true }, 'Choose a provider')]
+      : listed ? [] : [M.h('option', { value: current.provider, disabled: true, selected: true }, `${current.provider} (set outside MastHead)`)];
+    const select = M.h('select', { id: `${prefix}-provider`, required: true }, ...placeholder,
       ...providers.map((p) => M.h('option', { value: p.id, selected: p.id === current.provider }, p.label)));
     const model = M.h('input', {
       type: 'text', id: `${prefix}-model`, autocomplete: 'off', class: 'mono', required: true, value: current.model || '',
@@ -103,15 +105,12 @@
     const chosen = () => providers.find((p) => p.id === select.value);
     function update(initial) {
       const p = chosen();
-      if (!p) return;
+      if (!p) { example.textContent = ''; addressHelp.textContent = ''; versionField.hidden = true; return; }
       example.textContent = `Horizon's default for ${p.label} is ${p.example_model}. Check that your provider still offers it, or type another name exactly as your provider writes it.`;
       if (!initial) {
-        model.value = p.example_model || '';
-        address.value = p.id === 'ollama' ? p.base_url : '';
         version.value = p.api_version || '';
       }
-      addressHelp.textContent = p.id === 'ollama' ? 'Where your Ollama answers.'
-        : `Optional. Leave empty to use Horizon's address for ${p.label}.`;
+      addressHelp.textContent = `Optional. Empty: Horizon's address for ${p.label}${p.base_url ? ` (${p.base_url})` : ''}.`;
       versionField.hidden = p.id !== 'azure';
     }
     select.addEventListener('change', () => update(false));

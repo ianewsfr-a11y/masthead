@@ -80,9 +80,16 @@ class DomainEnvironment:
                 self._environ.pop(name, None)
         self._applied = set()
 
+    def apply_shared(self) -> None:
+        """The shared keys only, for a model call made before any domain exists (setup suggestions)."""
+        self._apply(self._shared())
+
     def apply(self, domain: Any) -> None:
+        self._apply(self.values_for(domain))
+
+    def _apply(self, values: dict[str, str]) -> None:
         self.clear()
-        for name, value in self.values_for(domain).items():
+        for name, value in values.items():
             if name not in self._base:
                 self._environ[name] = value
                 self._applied.add(name)

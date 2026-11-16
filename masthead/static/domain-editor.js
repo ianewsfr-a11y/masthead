@@ -30,61 +30,99 @@
       help ? M.h('span', { class: 'help', id: `${id}-help` }, help) : null);
   }
 
-  // ------------------------------------------------------------ creating a draft
+  // ------------------------------------------------------------ creating a domain: Horizon's own setup
+  /* The steps of horizon-wizard on one page: subject, AI, interests and suggestions, sources.
+     Nothing is pre-filled. "Create the draft" hands the answers to Horizon's build_config,
+     which writes the configuration; MastHead writes no setting of its own. */
   async function viewNew(token) {
     const M = window.MastHead;
-    const status = await M.api.get('/api/ai');
+    let status = await M.api.get('/api/ai');
     if (!M.isCurrent(token)) return;
-    const domains = M.state.domains.filter((d) => !d.draft);
+    const Sources = window.MastHeadEditorSources;
     const plain = { autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', autocorrect: 'off' };
     const name = M.h('input', { type: 'text', required: true, autocomplete: 'off', maxlength: 80 });
     const id = M.h('input', { type: 'text', required: true, class: 'mono', pattern: '[a-z][a-z0-9\\-]{0,40}', ...plain });
     const description = M.h('input', { type: 'text', maxlength: 200 });
-    const copyFrom = M.h('select', {}, M.h('option', { value: '' }, 'Nothing: Horizon’s defaults'),
-      ...domains.map((d) => M.h('option', { value: d.id }, d.name)));
-    const languages = M.h('input', { type: 'text', class: 'mono', required: true, ...plain, value: 'en' });
-    const ai = window.MastHeadAI.modelFields(M, status.providers, { provider: 'anthropic', model: '' }, 'nd-ai');
+    const languages = M.h('input', { type: 'text', class: 'mono', required: true, ...plain });
+    const ai = window.MastHeadAI.modelFields(M, status.providers, { provider: '', model: '' }, 'nd-ai');
     let idEdited = false;
     name.addEventListener('input', () => { if (!idEdited) id.value = slug(name.value); });
     id.addEventListener('input', () => { idEdited = true; });
-    copyFrom.addEventListener('change', () => {
-      const source = domains.find((d) => d.id === copyFrom.value);
-      if (!source) return;
-      languages.value = (source.languages || ['en']).join(', ');
-      const select = document.getElementById('nd-ai-provider');
-      select.value = source.provider;
-      select.dispatchEvent(new Event('change'));
-      document.getElementById('nd-ai-model').value = source.model || '';
-    });
-    const message = window.MastHeadKit.messageArea(M);
-    const submit = M.h('button', { type: 'submit', class: 'btn primary' }, 'Create the draft');
-    const form = M.h('form', {
-      class: 'stack wide-form', 'aria-labelledby': 'new-title', onsubmit: async (event) => {
-        event.preventDefault();
-        submit.disabled = true;
-        message.clear();
-        try {
-          const chosen = ai.values();
-          const made = await M.api.post('/api/new-domain', {
-            id: id.value.trim(), name: name.value.trim(), description: description.value.trim(),
-            languages: languages.value.split(',').map((x) => x.trim()).filter(Boolean),
-            copy_from: copyFrom.value || null, provider: chosen.provider, model: chosen.model, base_url: chosen.base_url,
-          });
-          M.openDomain(made.id, `#/edit/${enc(made.id)}`);
-        } catch (error) { submit.disabled = false; message.error('The draft was not created', error.message); }
+
+    const languageList = () => languages.value.split(',').map((x) => x.trim()).filter(Boolean);
+    const aiValues = () => ({ ...ai.values(), languages: languageList() });
+    const chosenProvider = () => status.providers.find((p) => p.id === ai.values().provider);
+
+    // The key of the chosen provider, entered here so that Horizon's suggestions can run.
+    const keyHolder = M.h('div', { class: 'stack' });
+    function drawKey() {
+      const provider = chosenProvider();
+      if (!provider) { keyHolder.replaceChildren(); return; }
+      if (!provider.needs_key) { keyHolder.replaceChildren(M.h('p', { class: 'hint' }, `${provider.label} needs no key.`)); return; }
+      keyHolder.replaceChildren(window.MastHeadAI.keyStatus(M, provider.key_present, provider.key_source),
+        window.MastHeadAI.keyForm(M, provider, async () => {
+          status = await M.api.get('/api/ai');
+          drawKey();
+          suggest.gate();
+        }, 'nd-key'));
+    }
+    const providerSelect = ai.nodes[0].querySelector('select');
+    const modelInput = ai.nodes[1].querySelector('input');
+    providerSelect.addEventListener('change', () => { drawKey(); suggest.gate(); });
+
+    const selectedNote = M.h('p', { class: 'hint', role: 'status' });
+    const check = Sources.checker(M, { parse: '/api/setup/parse', test: '/api/setup/test', onTick: () => countSelected() }, 'select');
+    function countSelected() {
+      const count = check.selected().length;
+      selectedNote.textContent = count
+        ? `${M.plural(count, 'source is', 'sources are')} ticked. Horizon builds the configuration from them.`
+        : 'No source ticked yet. If you create the draft without any, Horizon switches Hacker News on, as its own setup does.';
+    }
+    const suggest = Sources.suggestions(M, {
+      ask: (interests) => M.api.post('/api/setup/suggest', { ai: aiValues(), interests, existing: check.selected() }),
+      keyOk: () => {
+        const provider = chosenProvider();
+        return Boolean(provider && ai.values().model && languageList().length && (!provider.needs_key || provider.key_present));
       },
-    },
-      M.h('fieldset', {}, M.h('legend', {}, 'Subject'),
+      keyHint: () => 'This uses the model: choose the AI, its model and the languages, and enter its key, in step 2.',
+    }, check.check);
+    for (const input of [languages, modelInput]) input.addEventListener('input', () => suggest.gate());
+    countSelected();
+
+    const message = window.MastHeadKit.messageArea(M);
+    const create = M.h('button', { type: 'button', class: 'btn primary' }, 'Create the draft');
+    create.addEventListener('click', async () => {
+      message.clear();
+      const invalid = [name, id, providerSelect, modelInput, languages]
+        .find((input) => !input.checkValidity());
+      if (invalid) { invalid.reportValidity(); invalid.focus(); return; }
+      create.disabled = true;
+      try {
+        const made = await M.api.post('/api/new-domain', {
+          id: id.value.trim(), name: name.value.trim(), description: description.value.trim(),
+          ...aiValues(), sources: check.selected(),
+        });
+        M.openDomain(made.id, `#/edit/${enc(made.id)}`);
+      } catch (error) { create.disabled = false; message.error('The draft was not created', error.message); }
+    });
+
+    const section = (number, title, lede, ...body) => M.h('section', { class: 'panel', 'aria-labelledby': `nd-step-${number}` },
+      M.h('h2', { id: `nd-step-${number}` }, `${number}. ${title}`), lede ? M.h('p', { class: 'hint' }, lede) : null, ...body);
+    M.show(M.pageHead('New domain', 'Horizon’s own setup, on screen: the AI, what you follow, the sources. Horizon then writes the configuration. Nothing is pre-filled.'),
+      section(1, 'Subject', null,
         field(M, 'nd-name', 'Name', name, 'What you follow, for example "Boating".'),
         field(M, 'nd-id', 'Short id', id, 'Lowercase letters, digits and dashes, starting with a letter. It names the folder and cannot change later.'),
-        field(M, 'nd-description', 'Description (optional)', description),
-        field(M, 'nd-languages', 'Languages', languages, 'Codes separated by commas, such as en, fr. Each kept story is written once per language.')),
-      M.h('fieldset', {}, M.h('legend', {}, 'AI'),
-        domains.length ? field(M, 'nd-copy', 'Start from the settings of', copyFrom, 'Languages, temperature and AI are copied. A key is never copied.') : null,
-        ...ai.nodes),
-      M.h('div', {}, submit), message.area);
-    M.show(M.pageHead('New domain', 'A draft is created. You then add sources and rules, and try it, before creating the domain.'),
-      M.h('section', { class: 'panel', 'aria-labelledby': 'new-title' }, M.h('h2', { id: 'new-title' }, 'Subject and AI'), form));
+        field(M, 'nd-description', 'Description (optional)', description)),
+      section(2, 'AI', 'As in Horizon’s setup: provider, model, address, output languages.',
+        ...ai.nodes,
+        field(M, 'nd-languages', 'Output languages', languages, 'Codes separated by commas, such as en, fr. Each kept story is written once per language. Horizon’s setup proposes zh, en.'),
+        keyHolder),
+      section(3, 'What should this domain follow?', 'Horizon asks your model for sources (one call; the tokens are shown). Optional.',
+        suggest.node),
+      section(4, 'Sources', 'Tick the sources Horizon should read. Each is tested with Horizon’s collector first; a source that fails cannot be ticked.',
+        Sources.pasteBox(M, { parse: '/api/setup/parse' }, check.check),
+        check.list, selectedNote),
+      M.h('div', { class: 'row-actions' }, create), message.area);
     name.focus();
   }
 
@@ -220,7 +258,7 @@
       collect.disabled = !sources || !rules;
       score.disabled = !sources || !key || !rules;
       reason.textContent = !sources ? 'Switch on at least one source first (step Sources).'
-        : !rules ? 'Save the editorial rules first (step Editorial rules): Horizon needs them before any run, even Collect only.'
+        : !rules ? 'Horizon cannot read this domain’s profiles (step Editorial rules), so no run can start.'
         : !key ? 'Collect only works now. Score and select needs the key of the AI (step Subject and AI).'
           : 'Collect only calls no model. Score and select uses the model to score; nothing is written and no briefing is produced.';
     }
@@ -264,7 +302,7 @@
     const ai = overview.settings.ai;
     if (!ai.api_key_present) items.push(['subject', `No key for the AI (${ai.api_key_env}): scoring and suggestions cannot run.`]);
     if (!overview.sources.some((s) => s.enabled)) items.push(['sources', 'No source is switched on.']);
-    if (!rules.exists) items.push(['rules', 'No editorial rules yet: Horizon needs them before any run.']);
+    if (overview.rules_missing) items.push(['rules', 'Horizon cannot read this domain’s profiles: see Editorial rules.']);
     return items;
   }
 
@@ -306,7 +344,7 @@
   async function view(domainId, token) {
     const M = window.MastHead;
     const base = `/api/domains/${enc(domainId)}`;
-    const [first, rules, status] = await Promise.all([M.api.get(base), M.api.get(`${base}/profile-form`), M.api.get('/api/ai')]);
+    const [first, rules, status] = await Promise.all([M.api.get(base), M.api.get(`${base}/profiles`), M.api.get('/api/ai')]);
     if (!M.isCurrent(token)) return;
     M.state.domain = domainId;
     M.store.set(domainId);
@@ -351,7 +389,7 @@
       const o = ctx.overview;
       if (id === 'subject') return o.settings.ai.api_key_present ? `${o.settings.ai.provider} · ${o.settings.ai.model}` : 'Key missing';
       if (id === 'sources') return M.plural(o.sources.filter((s) => s.enabled).length, 'source on', 'sources on');
-      if (id === 'rules') return !ctx.rules.exists ? 'Not written yet' : ctx.rules.managed ? 'Written with the form' : 'Files changed by hand';
+      if (id === 'rules') return ctx.rules.builtin ? 'Horizon’s built-in profiles' : 'The domain’s own profiles';
       if (id === 'settings') {
         const main = o.settings.profiles.find((p) => p.default) || o.settings.profiles[0];
         return `Minimum score ${main && main.threshold !== null ? main.threshold : 'none'}`;
