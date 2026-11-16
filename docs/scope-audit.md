@@ -233,7 +233,9 @@ No architecture line in CLAUDE.md on `main` points to a file that does not exist
 
 ---
 
-## 6. Configuration fields
+## 6. Configuration fields (redone on the branch `fix/scope-decisions`)
+
+Redone on 16 November 2026 after the owner's decisions. It covers the final editor and the screens of pull requests #6 (AI choice and keys) and #7 (domain editor), keys included, on the branch `fix/scope-decisions`, which starts from #7. The first version of this section, made on `main`, is in commit `520a201`.
 
 Categories:
 
@@ -243,137 +245,127 @@ Categories:
 4. written but read by nobody;
 5. duplicate or contradiction.
 
-### Sources and settings screen (all domains)
+**Rule since 16 November 2026: MastHead writes only what was typed.** A value equal to what Horizon already uses is not written: unchanged languages, time window, maximum and threshold are not written either. The exceptions are listed under "Written without being typed".
 
-| Label / place | Key written | Read in Horizon | Cat. |
+### Domains screen
+
+| Label | Key written | Read by Horizon | Cat. |
 |---|---|---|---|
-| Switch per row, Sources table (RSS, GitHub) | `sources.rss[i].enabled`, `sources.github[i].enabled` | `scrapers/rss.py:fetch`, `scrapers/github.py:fetch` | 1 |
-| Switch, Hacker News row | `sources.hackernews.enabled` | `orchestrator.fetch_all_sources`, `scrapers/hackernews.py` | 1 |
-| Switch, Reddit / Telegram row with nothing to read | `sources.reddit.enabled`, `sources.telegram.enabled` | same | 2 when the lists are empty ("Nothing to read"); 1 otherwise |
-| Switch, other singletons (OpenBB, OSSInsight, GDELT, Google News, Twitter) | `sources.<kind>.enabled` | `fetch_all_sources` and their scrapers | 1 |
-| Minimum score (Essentials) | `processing.profile_settings.<each profile>.threshold`; an empty field writes `null` | `orchestrator.passes_profile_filter` | 1, and 5 (see below) |
-| Stories per briefing (Essentials) | `digest.max_items`; empty removes the key | `orchestrator.apply_balanced_digest` | 1 |
-| Time window, in hours (Essentials) | `collection.time_window_hours` | MastHead passes it to `fetch_items(hours=…)`; Horizon `_determine_time_window` | 1 |
-| Model panel (read only): temperature shown | — | `ai.temperature`: analysis, classification, dedup; **not** writing (`ai/enricher.py` sends 0) | display only |
+| AI keys: key of a provider (password field), Save / Delete | `~/.masthead/keys.env`, `<PROVIDER>_API_KEY=…` (MastHead's file). It is applied to the process environment only while a run of a domain using that provider goes (`env.py`). | the variable named by `ai.api_key_env` (`ai/client.py:_resolve_api_key`) | 1 for a provider a domain uses; 2 for a provider no domain uses |
+| AI keys: Azure endpoint | `keys.env`, `AZURE_OPENAI_ENDPOINT=…` | the variable named by `ai.azure_endpoint_env` (`AzureOpenAIClient.__init__`) | 1 with an Azure domain; 2 otherwise |
+| Create a domain / Import a Horizon setup (first start) | nothing | — | — |
+
+### New domain, and the Subject and AI step
+
+| Label | Key written | Read by Horizon | Cat. |
+|---|---|---|---|
+| Name | `domain.json` `name` | not read; also the default profile name when the rules leave it empty | 3: display name. Useful; not essential, since the id could serve. |
+| Short id (creation only) | folder name, `processing.default_profile`, profile `id`, `sources[].profile` | `ProfileRegistry`, `ai/classifier.py:resolve` | 1 |
+| Description (optional) | `domain.json` `description`; also pre-fills the suggestions box | not read | 3: optional |
+| Languages | `ai.languages`, only when different from Horizon's `["en"]`, or when the AI was copied | `orchestrator.enrich_items`, summaries | 1. **Required by MastHead** (at least one). Horizon defaults to `["en"]`. |
+| Start from the settings of (creation, when other domains exist; default "Nothing") | copies the whole `ai` section of the chosen domain (`temperature`, `max_tokens`…), then provider and model below replace theirs | `ai/client.py` | 1, and 5 with provider and model (see below) |
+| AI provider | `ai.provider`; also `ai.api_key_env` (Horizon's name for the provider) | `ai/client.py:_create_single_client`, `_resolve_api_key` | 1. Horizon requires `api_key_env`. |
+| Model | `ai.model` | the clients in `ai/client.py` | 1. Required by both. |
+| Address | `ai.base_url` when filled. **For Ollama it is pre-filled with Horizon's own address and written.** | `OpenAIClient._resolve_base_url` (`base_url`, then `OLLAMA_HOST` and similar variables, then Horizon's default) | 1. For Ollama it equals Horizon's default, but writing it makes Horizon ignore `OLLAMA_HOST`: see "Written without being typed". |
+| API version (Azure only) | `ai.api_version`, pre-filled with Horizon's value (`2024-10-21`); also `ai.azure_endpoint_env` | `AzureOpenAIClient.__init__` (fails if missing) | 1. Horizon requires both for Azure. |
+| Key of the chosen provider (same form as AI keys) | `keys.env` | as above | 1 |
+| *(not on screen)* | `domain.json` `draft: true` | not read | 3: essential to the draft flow |
+| *(not on screen, explained on the Sources step)* | `sources.hackernews.enabled: false`, `sources.reddit.enabled: false`, `sources.telegram.enabled: false` | `orchestrator.fetch_all_sources` | 1. **The one value kept that differs from Horizon's defaults** (owner's decision, 16 November 2026). |
+
+### Sources step
+
+| Label | Key written | Read by Horizon | Cat. |
+|---|---|---|---|
+| Pasted lines, then Check these sources | nothing; each line is tested in a scratch folder that is deleted | `fetch_items` on that source alone | — |
+| Ticked line, then Add the ticked sources: feed (`Name \| url`) | `rss[]`: `name`, `url`, `profile` | `scrapers/rss.py`; `profile` → `ai/classifier.py:resolve` | 1 |
+| … `github.com/owner/repo` or `github.com/user` | `github[]`: `type`, `owner` and `repo`, or `username`; `profile` | `scrapers/github.py` | 1 |
+| … `r/subreddit` | `reddit.subreddits[]`: `subreddit`, `profile`; and `reddit.enabled: true` | `scrapers/reddit.py` | 1 |
+| … `t.me/channel` | `telegram.channels[]`: `channel`, `profile`; and `telegram.enabled: true` | `scrapers/telegram.py` | 1 |
+| What should this domain follow? (suggestions) | nothing saved; sent to Horizon as `interests` | `setup/ai_recommend.py` | 1, not stored |
+| Switches, then Save the sources | `enabled` of each source changed | `fetch_all_sources` and the scrapers | 1; **2** for Reddit or Telegram while they have no subreddit or channel |
+
+No source gets `category`, `sort`, `time_filter`, `fetch_limit` or `min_score` any more (point 4).
+
+### Editorial rules step
+
+The form starts empty, with examples as help text. Nothing is written before Save. Only typed text is written, without added sentences. The three `match.md` fields are gone (point 6).
+
+| Label | Key written (file) | Read by Horizon | Cat. |
+|---|---|---|---|
+| Goal of the score; Score 9-10 … 0-2 (each prefixed with its level, only when filled); What makes a story important? | `analysis.md` | analysis prompt (`ai/prompting/analysis.py`) | 1 |
+| Characters of each article read for scoring | `profile.json` `content.analysis_max_chars`, only when filled | `ai/analyzer.py:_analyze_item` | 1. Empty: Horizon's 1,000. |
+| Role of the writer; Summary; Writing rules | `enrichment.md` (each block's text prefixed with its block id) | enrichment prompt (`ai/prompting/enrichment.py`) | 1 |
+| Background paragraph (switch) + Background | block `background` with the tool `history_search`; text in `enrichment.md` | `ai/enricher.py` | 1 |
+| Let the model search the web for background | adds `web_search` to the background block's tools | `ai/enricher.py`, `processing/tools.py` | 1 with Background on; **2** with Background off: nothing is written |
+| Impact paragraph (switch) + Impact | block `impact` (`optional`) | `ai/enricher.py` | 1 |
+| Community discussion (switch) + text | block `community_discussion` (`optional`) | `ai/enricher.py` | 1. Probably **2** for a domain whose sources carry no comments (RSS, GitHub): unsure. |
+| Profile name (optional) | `profile.json` `name`; empty means the domain's name | classification prompt, profile names for the summarizer | 1 |
+| Files as text: `analysis.md`, `enrichment.md` | the file | prompts | 1, and 5 with the form (see below) |
+| Files as text: `match.md` | the file | classification prompt only | **2** in a domain whose sources all name the profile, which is every domain made in MastHead; 1 for an imported domain whose sources name none |
+| *(not on screen)* | `domain.json` `profile_form` (the form's values) | not read | 3: to refill the form |
+| *(not on screen)* | `domain.json` `profile_files` (fingerprints of the files the form wrote) | not read | 3: needed so the form never replaces a file changed by hand without asking (point 2) |
+
+### Settings step and the run inspector
+
+| Label | Key written | Read by Horizon | Cat. |
+|---|---|---|---|
+| Minimum score | `processing.profile_settings.<default profile>.threshold` only; empty removes it | `orchestrator.passes_profile_filter` | 1, and 5 with the inspector button (same key, same profile) |
+| Stories per briefing | `digest.max_items`, only when changed; empty removes it | `apply_balanced_digest` | 1 |
+| Time window, in hours | `collection.time_window_hours`, only when changed | `fetch_items(hours=…)`, `_determine_time_window` | 1 |
 | Limits per group (read only) | — | `digest.category_groups` | display only |
+| Inspector: Use this score from now on (names the profile when the domain has several) | same key as Minimum score | as above | 1, and 5 |
+| Estimated cost | reads `domain.json` `pricing`, which the interface never writes | not read | 3: optional |
+| Trial run: Collect only / Score and select; Create the domain; Discard the draft | no config key; Create removes `draft` | — | — |
 
-### Run inspector
+### Remaining fields in categories 2 to 5
 
-| Label / place | Key written | Read in Horizon | Cat. |
-|---|---|---|---|
-| Replay slider | nothing | — | — |
-| "Use this score from now on" | `processing.profile_settings.<each profile>.threshold` | `passes_profile_filter` | 1, and 5 (writes the same key as Minimum score) |
-| Estimated cost | reads `domain.json` `pricing.input_per_mtok`, `output_per_mtok`, `currency`; never written by the interface | not read | 3 (optional: shows a cost only if the user writes it) |
+**Category 2, read by Horizon but without effect in the user's situation:**
 
-### New domain, step 1 (Subject)
-
-| Label | Key written | Read in Horizon | Cat. |
-|---|---|---|---|
-| Name | `domain.json` `name`; also inserted into the default rules text and the suggestion box | not read | 3: the display name; not essential (the id could serve) |
-| Short id | folder name, `processing.default_profile`, profile `id`, `profile_settings` key, `sources[].profile` | `ProfileRegistry`, `ai/classifier.py:resolve` | 1 |
-| Description (optional) | `domain.json` `description`; also inserted into `match.md` by default | not read (except through `match.md`, see below) | 3: not essential |
-| Model settings from (list) | copies the whole `ai` section of the chosen domain, or of the starter: `provider`, `model`, `api_key_env`, `temperature`, `max_tokens`, `base_url` if any | `ai/client.py` | 1. It writes `temperature` and `max_tokens` without the user asking; the starter values are Horizon's defaults (0.3, 4096). |
-| Languages | `ai.languages` | `orchestrator.enrich_items`, summaries | 1. **Required in MastHead** (at least one); Horizon defaults to `["en"]`. |
-| Model | `ai.model` (left from the copied section when empty) | `ai/client.py` | 1. When no domain exists, the default comes from the starter (`claude-haiku-5-5`), not from Horizon (`claude-sonnet-5-5`). |
-| *(not on screen)* | `domain.json` `draft: true` | not read | 3: essential for the draft flow |
-| *(not on screen)* | `profile_settings.<id>.threshold: 6.5` | `passes_profile_filter` | 1. **Differs from Horizon's default (none). Written unasked.** |
-| *(not on screen)* | `profile_settings.<id>.topic_dedup: true` | `orchestrator.filter_items` | 1, same as the default: redundant |
-| *(not on screen)* | `digest.max_items: 10` | `apply_balanced_digest` | 1. **Differs from Horizon's default (None). Written unasked.** |
-| *(not on screen)* | `collection.time_window_hours: 24`, `processing.profiles_dir: "profiles"`, `rss: []`, `github: []` | read | 1, same as Horizon's defaults: redundant |
-| *(not on screen, but explained on the page)* | `hackernews.enabled: false`, `reddit: {enabled: false, subreddits: []}`, `telegram: {enabled: false, channels: []}` | `fetch_all_sources` | 1. **Differs from Horizon's defaults** (approved in the plan). The empty lists are redundant. |
-
-### New domain, step 2 (Sources)
-
-| Label | Key written | Read in Horizon | Cat. |
-|---|---|---|---|
-| Kind (list) | chooses the section: `rss[]`, `github[]` (`type: repo_releases` or `user_events`), `reddit.subreddits[]`, `telegram.channels[]` | `scrapers/*` | 1 |
-| Name / Feed address | `rss[].name`, `rss[].url` | `scrapers/rss.py` | 1 |
-| Owner / Repository | `github[].owner`, `github[].repo` | `scrapers/github.py` | 1 |
-| User name | `github[].username` | `scrapers/github.py` | 1 |
-| Subreddit name | `reddit.subreddits[].subreddit`, and `reddit.enabled: true` | `scrapers/reddit.py` | 1 |
-| Channel name | `telegram.channels[].channel`, and `telegram.enabled: true` | `scrapers/telegram.py` | 1 |
-| *(unasked, every source)* | `enabled: true` | read | 1, same as the default |
-| *(unasked, every source)* | `profile: <domain id>` | `ai/classifier.py:resolve` (`source_override`) | 1: it avoids a classification model call |
-| *(unasked, every source)* | `category: "news"`, `"releases"` or `"community"` | `apply_balanced_digest` | **2**: no effect without `category_groups` or `default_group_limit`, which a new domain does not have |
-| *(unasked, subreddit)* | `sort: "top"`, `time_filter: "day"`, `fetch_limit: 15`, `min_score: 50` | `scrapers/reddit.py` | 1. **Three differ from Horizon** (`"hot"`, 25, 10). `time_filter` equals the default. |
-| *(unasked, Telegram)* | `fetch_limit: 20` | `scrapers/telegram.py` | 1, same as the default |
-| Test / Add buttons | Test writes nothing (scratch folder deleted) | — | — |
-| What should this domain follow? (suggestions) | nothing saved; sent as `interests` | `setup/ai_recommend.py` (prompt) | 1, not stored |
-| Switches on the draft page | `sources.*.enabled` | as above | 1 |
-
-### New domain, step 3 (Editorial rules)
-
-**Important point (checked).** `match.md` is used only in Horizon's classification prompt (`ai/prompting/classification.py`). Classification by the model happens only when a source has no profile, or `"auto"`, or a list of profiles (`ai/classifier.py:resolve`). MastHead gives every source added in New domain `profile: <id>`. So in a domain created by MastHead, **the match fields have no effect** (category 2).
-
-| Label | Key written (file) | Read in Horizon | Cat. |
-|---|---|---|---|
-| Profile name | `profile.json` `name`; heading of `match.md` | classification prompt; profile names for the summarizer (`ProfileRegistry.names`) | 1 (the summarizer uses it) |
-| What this domain covers / Typical stories / What does not belong | `match.md` | classification prompt only | **2** (see above) |
-| Goal of the score / Score 9-10 … 0-2 (5 fields) / What to weigh | `analysis.md` | analysis prompt (`ai/prompting/analysis.py`) | 1 |
-| Characters of each article read for scoring | `profile.json` `content.analysis_max_chars` | `ai/analyzer.py:_analyze_item` | 1. **Default 4000 in MastHead, 1000 in Horizon's model.** |
-| Role of the writer / Summary / Writing rules | `enrichment.md` | enrichment prompt (`ai/prompting/enrichment.py`) | 1 |
-| Background paragraph (switch) + Background (text) | `enrichment.blocks` `background` (tools `history_search`, plus `web_search` if ticked), and a line in `enrichment.md` | `ai/enricher.py` | 1 |
-| Let the model search the web for background | `web_search` in the background block's `tools` | `ai/enricher.py`, `processing/tools.py` | 1 when Background is on; **2** when it is off (the text is ignored) |
-| Impact paragraph (switch) + Impact (text) | block `impact` (`optional`, no tool; Horizon's built-in gives it `web_search`) | `ai/enricher.py` | 1 |
-| Community discussion (switch) + text | block `community_discussion` (`optional`) | `ai/enricher.py` | 1. Probably 2 for a domain without sources that carry comments (RSS, GitHub). Unsure. |
-| *(unasked)* | `content.enrichment_max_chars: 8000`, `content.sampling: "prefix"` | `ai/prompting/enrichment.py`, `processing/content.py` | 1, same as Horizon's defaults: redundant |
-| *(unasked)* | lines added to the files ("Use three to five specific topic tags.", "Use `web_search` only when…") | prompts | 1, MastHead text (C45) |
-| *(not on screen)* | `domain.json` `profile_form` (the form's values) | not read | 3: needed to refill the form; not needed by Horizon |
-| Profile files tabs: match.md, analysis.md, enrichment.md (editable) | the same files | as above | 1 (`match.md`: 2), and **5** with the form |
-
-### New domain, step 4 (Trial run) and the end
-
-| Label | Key written | Read in Horizon | Cat. |
-|---|---|---|---|
-| Collect only / Score and select | nothing in the config; a run in `data/mcp-runs` | stage functions | — |
-| Create the domain | removes `domain.json` `draft` | not read | 3 |
-| Discard this draft | deletes the folder | — | — |
-
-### Required in MastHead but not in Horizon
-
-| Requirement | Code | Horizon |
-|---|---|---|
-| At least one language | `new_domain.py:_languages` | default `["en"]` |
-| Name of the domain | `new_domain.py:create_draft` | no such concept |
-| Six text fields and five score levels non-empty: profile name, what belongs, goal, writer's role, summary, writing rules | `profile_form.py:clean` (`_REQUIRED_TEXT`) | requires only the files named in `profile.json` (and `name`). Unsure whether Horizon accepts empty files. |
-| A profile file edited as text cannot be empty | `new_domain.py:save_profile_file` | unsure, as above |
-| At least one source on, to create the domain | `new_domain.py:publish` | none |
-| Text read for scoring between 500 and 100,000 | `profile_form.py:clean` | same bounds (`processing/profiles.py`): not an extra requirement |
-
-### Lists for the owner's decision
+1. The Reddit and Telegram switches while they have no subreddit or channel.
+2. `match.md` (files as text) in domains made in MastHead, where every source names the profile.
+3. "Let the model search the web for background" while Background is off: nothing is written.
+4. "Community discussion" for a domain whose sources carry no comments. Unsure.
+5. A key in AI keys for a provider that no domain uses, and the Azure endpoint without an Azure domain.
 
 **Category 3, MastHead only:**
 
-- `domain.json` `name` (display; useful);
-- `domain.json` `description` (optional);
-- `domain.json` `draft` (essential to the draft flow);
-- `domain.json` `profile_form` (essential to refill the form);
-- `domain.json` `pricing` (read only, never written by the interface; optional).
+1. `domain.json` `name`: display. Useful, and also the default profile name; not essential.
+2. `domain.json` `description`: optional.
+3. `domain.json` `draft`: essential to the draft flow.
+4. `domain.json` `profile_form`: essential to refill the form.
+5. `domain.json` `profile_files`: essential to point 2.
+6. `domain.json` `pricing`: optional, written by hand.
+7. `keys.env`: MastHead's store for the keys. Horizon reads the variables, not the file.
 
-**Category 4, written but read by nobody:** none found on `main`. Close to it:
-
-- `category` on new sources: read, but without effect, so classed 2;
-- the copied `api_key_env` of an Ollama domain: unsure whether it is read, because `_resolve_api_key` falls back to `"no_key"` for Ollama.
+**Category 4, written but read by nobody:** none found. The `category` written on sources until now has gone.
 
 **Category 5, duplicates and contradictions:**
 
-1. **Minimum score and "Use this score from now on" write the same key.** Both overwrite the threshold of **every** profile listed in `profile_settings`, while the field shows only the default profile's value. A domain with several thresholds, such as an imported one, loses them without warning.
-2. **The rules form and the file tabs write the same three files.** Saving the form overwrites hand edits without a warning on `main`. `domain.json` `profile_form` then no longer matches the files. PR #7 adds a warning, but only for domains whose rules were never saved by the form.
-3. **"Model settings from" and Model both set `ai.model`.** The list fills the field, so they agree on screen, but the copied `ai` section can carry a `base_url` or an Azure setting that does not fit the model typed.
+1. **"Minimum score" (Settings) and "Use this score from now on" (inspector)** write the same key, for the same profile now. They agree, but two controls change one value.
+2. **The rules form and the files as text** write the same two files, `analysis.md` and `enrichment.md`. The form never replaces a file changed by hand without a confirmation that names it. After a hand edit, the form still shows its last saved values, not the text of the files.
+3. **"Start from the settings of", and Provider and Model.** The copied `ai` section is written first, then the provider and model typed replace those copied; temperature, `max_tokens` and the other copied settings stay.
 
-**Unasked keys written in the files:** the threshold, `max_items` and source values under C37 and C39; `enrichment_max_chars`, `sampling` and the fixed lines under C45; the copied `temperature` and `max_tokens`; and the starter domain as a whole (C5).
+### Written without being typed (remaining)
 
-**Defaults different from Horizon's:**
-
-| Setting | MastHead | Horizon |
+| Key | Why | Horizon |
 |---|---|---|
-| `threshold` | 6.5 (new domain and starter) | none |
-| `max_items` | 10 (new domain), 6 (starter) | `None` |
-| `analysis_max_chars` | 4000 | 1000 |
-| Hacker News, Reddit, Telegram | off | on |
-| Reddit `sort` / `fetch_limit` / `min_score` | `"top"` / 15 / 50 | `"hot"` / 25 / 10 |
-| `category` | `"news"` / `"releases"` / `"community"` | `None` |
-| Starter model | `claude-haiku-5-5` | `claude-sonnet-5-5` |
+| `sources.hackernews/reddit/telegram.enabled: false` at creation | owner's decision: the one value kept that differs | enabled by default |
+| `ai.api_key_env` | Horizon requires it (`AIConfig`) | required, no default |
+| `ai.azure_endpoint_env`, `ai.api_version` (Azure) | Horizon fails without them | required for Azure |
+| `ai.base_url` for Ollama, pre-filled with Horizon's address | added with the AI choice (PR #6) | Horizon would use the same address, **unless `OLLAMA_HOST` or `OLLAMA_BASE_URL` is set**: writing it makes Horizon ignore those variables. To decide: keep it, or write the address only when typed. |
+| block `summary` with `"primary": true` | Horizon requires at least one block; `primary` is what the briefing shows as the main text, as in Horizon's built-in profiles | at least one block required |
+| tool `history_search` on the Background block | the form ties it to Background, as Horizon's built-in profiles do | no default (a block without tools) |
+| empty `match.md`, when missing | Horizon requires the file | required |
+| `domain.json` `draft`, `profile_form`, `profile_files` | MastHead's own state | not read |
+
+### Required in MastHead but not in Horizon (remaining)
+
+- At least one language (Horizon: `["en"]`).
+- A name for the domain (no such concept in Horizon).
+- One source switched on, to create the domain (Horizon accepts none).
+- The editorial rules, before any run, even Collect only. Horizon requires them: it refuses to load a domain whose default profile does not exist. MastHead says so and disables the trial buttons until they are saved.
+
+The six required texts and the five score levels of the form are no longer required.
 
 ---
 
