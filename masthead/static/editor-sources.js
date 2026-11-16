@@ -128,19 +128,20 @@
     const interests = M.h('textarea', { id: 'src-interests', rows: 2 }, start || '');
     const message = window.MastHeadKit.messageArea(M);
     const button = M.h('button', { type: 'button', class: 'btn' }, 'Ask Horizon');
-    const presetButton = M.h('button', { type: 'button', class: 'btn' }, 'Search Horizon’s presets');
+    const presetButton = M.h('button', { type: 'button', class: 'btn' }, 'Search the presets');
     const toCheck = (list) => list.map((s) => ({ line: describe(s.config), kind: s.type, fields: s.config,
-      description: s.description, reason: s.reason, error: null }));
+      description: s.description, reason: s.theme ? `From the preset list “${s.theme}”.` : s.reason, error: null }));
     presetButton.addEventListener('click', async () => {
       if (!interests.value.trim()) { message.error('Nothing to search', 'Describe what the domain follows, in a few words.'); interests.focus(); return; }
       presetButton.disabled = true;
       message.clear();
       try {
         const answer = await presets(interests.value);
+        const problems = answer.problems && answer.problems.length ? ` Lists that could not be read: ${answer.problems.join('; ')}` : '';
         if (!answer.suggestions.length) {
-          message.error('No preset matches these words', `Horizon’s presets cover: ${answer.themes.join(', ')}. Paste your own sources, or ask Horizon.`);
+          message.error('No preset matches these words', `The preset lists cover: ${answer.themes.join(', ')}. Paste your own sources, or ask Horizon.${problems}`);
         } else {
-          message.info(`${M.plural(answer.suggestions.length, 'preset source', 'preset sources')}`, 'Found in Horizon’s preset library, with no model call. They are tested in the list.');
+          message.info(`${M.plural(answer.suggestions.length, 'preset source', 'preset sources')}`, `Found in the preset lists, with no model call. They are tested in the list.${problems}`);
           await check(toCheck(answer.suggestions));
         }
       } catch (error) { message.error('No preset', error.message); }
@@ -181,7 +182,7 @@
       node: M.h('div', { class: 'stack' },
         M.h('div', { class: 'field' }, M.h('label', { for: 'src-interests' }, 'What should this domain follow?'), interests, examples, help),
         M.h('div', { class: 'row-actions' }, presetButton, button),
-        M.h('p', { class: 'hint' }, 'Search Horizon’s presets: its own list of sources, matched on your words, no model call, free. Ask Horizon: your model suggests sources.'),
+        M.h('p', { class: 'hint' }, 'Search the presets: ready-made lists of sources (Horizon’s, MastHead’s and yours), matched on your words by Horizon, no model call, free. Ask Horizon: your model suggests sources.'),
         message.area),
     };
   }
@@ -225,6 +226,51 @@
     return { holder, draw, save, message };
   }
 
+  /* Share the domain's sources that are on as a preset list, in Horizon's preset format,
+     written to the user's presets folder; the file can then be sent to someone else. */
+  function shareBox(M, domainId, overview) {
+    const Kit = window.MastHeadKit;
+    const message = Kit.messageArea(M);
+    const name = M.h('input', { type: 'text', id: 'share-name', maxlength: 80, 'aria-describedby': 'share-name-help' });
+    const keywords = M.h('input', { type: 'text', id: 'share-keywords', 'aria-describedby': 'share-keywords-help' });
+    const button = M.h('button', { type: 'button', class: 'btn' }, 'Write the preset list');
+    const result = M.h('div', { class: 'stack' });
+    async function send(replace) {
+      return M.api.post(`/api/domains/${enc(domainId)}/preset-share`, { name: name.value, keywords: keywords.value, replace });
+    }
+    button.addEventListener('click', async () => {
+      message.clear();
+      result.replaceChildren();
+      button.disabled = true;
+      try {
+        let written;
+        try { written = await send(false); } catch (error) {
+          if (error.status !== 409) throw error;
+          const replace = await Kit.confirmDialog(M, {
+            title: 'Replace your preset list?', body: error.message, confirm: 'Replace it', danger: true,
+          });
+          if (!replace) { button.disabled = false; return; }
+          written = await send(true);
+        }
+        const download = M.h('a', { class: 'btn', download: written.file,
+          href: URL.createObjectURL(new Blob([written.text], { type: 'application/json' })) }, 'Download the file');
+        message.info('Preset list written', `${M.plural(written.sources, 'source', 'sources')} in ${written.path}. The search finds it from now on; send the file to share it.`);
+        result.replaceChildren(...[
+          written.left_out.length ? M.h('p', { class: 'hint' }, `Not in the list, because Horizon’s preset format has no place for them: ${written.left_out.join(', ')}.`) : null,
+          M.h('div', {}, download)].filter(Boolean));
+      } catch (error) { message.error('Not written', error.message); }
+      button.disabled = false;
+    });
+    return M.h('details', { class: 'fold' }, M.h('summary', {}, 'Share these sources as a preset list'),
+      M.h('div', { class: 'stack' },
+        M.h('p', { class: 'hint' }, 'The sources switched on are written as a preset list, in Horizon’s own format, so that others can find them with Search the presets.'),
+        M.h('div', { class: 'field' }, M.h('label', { for: 'share-name' }, 'Theme'), name,
+          M.h('span', { class: 'help', id: 'share-name-help' }, `The name shown in the search, for example “Flight simulation”. The file is named after this domain (${overview.id}.json).`)),
+        M.h('div', { class: 'field' }, M.h('label', { for: 'share-keywords' }, 'Keywords'), keywords,
+          M.h('span', { class: 'help', id: 'share-keywords-help' }, 'Words someone would type to find this list, separated by commas. For example: flight simulator, msfs, x-plane, simulation de vol.')),
+        M.h('div', {}, button), message.area, result));
+  }
+
   // The editor's Sources step, for a domain that exists.
   function step(M, ctx) {
     const { domainId, overview, tracker, refresh } = ctx;
@@ -253,7 +299,8 @@
           M.h('h3', { id: 'src-list-title' }, 'Sources Horizon will read'),
           M.h('p', { class: 'hint' }, 'Every source Horizon will read is listed, including Hacker News, Reddit and Telegram when Horizon reads them.'),
           current.holder,
-          M.h('div', { class: 'row-actions' }, current.save, tracker.indicator), current.message.area),
+          M.h('div', { class: 'row-actions' }, current.save, tracker.indicator), current.message.area,
+          shareBox(M, domainId, overview)),
       ],
     };
   }
