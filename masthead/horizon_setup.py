@@ -200,31 +200,6 @@ async def test(item: Any) -> dict[str, Any]:
 PRESETS_FILE = Path(__file__).resolve().parent / "presets" / "horizon-presets.json"
 
 
-def _presets() -> dict[str, Any]:
-    """Horizon's preset library, read from the copy shipped with MastHead. Never from the network."""
-    from src.setup.presets import load_presets
-
-    return load_presets(presets_path=str(PRESETS_FILE), prefer_api=False)
-
-
-def preset_themes() -> list[str]:
-    return [str(domain.get("name")) for domain in _presets().get("domains", [])]
-
-
-def preset_matches(interests: Any) -> dict[str, Any]:
-    """Sources from Horizon's presets matching these words, by Horizon's own match_sources. No model call."""
-    from src.setup.presets import match_sources
-
-    if not isinstance(interests, str) or not interests.strip():
-        raise DomainError("Describe what the domain follows, in a few words.")
-    found = []
-    for source, _score in match_sources(interests.strip(), _presets()):
-        item = suggestion(source)
-        if item:
-            found.append({**item, "origin": "preset"})
-    return {"suggestions": found, "themes": preset_themes()}
-
-
 # -- suggestions ---------------------------------------------------------------------------
 
 def suggestion(value: Any) -> dict[str, Any] | None:

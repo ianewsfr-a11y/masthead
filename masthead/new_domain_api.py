@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from . import config_view, horizon_setup, new_domain
+from . import config_view, horizon_setup, new_domain, preset_lists
 from .domains import get_domain
 from .runner import RunManager
 
@@ -46,12 +46,20 @@ def install(app: FastAPI, manager: RunManager) -> None:
 
     @app.post("/api/setup/presets")
     async def setup_presets(body: dict[str, Any]) -> dict[str, Any]:
-        return horizon_setup.preset_matches(body.get("interests"))
+        return preset_lists.matches(body.get("interests"))
 
     @app.post("/api/domains/{domain_id}/source-presets")
     async def source_presets(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
         get_domain(domain_id)
-        return horizon_setup.preset_matches(body.get("interests"))
+        return preset_lists.matches(body.get("interests"))
+
+    @app.post("/api/domains/{domain_id}/preset-share")
+    async def preset_share(domain_id: str, body: dict[str, Any]):
+        try:
+            return preset_lists.share(get_domain(domain_id), body)
+        except FileExistsError as exc:
+            return JSONResponse({"error": f"A list with this id already exists: {exc}. Replace it, or choose another id.",
+                                 "code": "PRESET_EXISTS"}, status_code=409)
 
     @app.post("/api/setup/suggest")
     async def setup_suggest(body: dict[str, Any]):

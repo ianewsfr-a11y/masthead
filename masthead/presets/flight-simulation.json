@@ -1,0 +1,172 @@
+{
+  "domains": [
+    {
+      "id": "flight-simulation",
+      "name": "Flight simulation",
+      "keywords": [
+        "flight simulator",
+        "flight simulation",
+        "flight sim",
+        "flightsim",
+        "msfs",
+        "msfs 2024",
+        "microsoft flight simulator",
+        "x-plane",
+        "xplane",
+        "prepar3d",
+        "simulation de vol",
+        "simulateur de vol",
+        "simulateur",
+        "virtual aviation",
+        "aviation"
+      ],
+      "sources": [
+        {
+          "type": "rss",
+          "description": "Microsoft Flight Simulator news from the official site (mirror feed)",
+          "tags": [
+            "msfs",
+            "official"
+          ],
+          "config": {
+            "name": "MSFS Official Blog",
+            "url": "https://raw.githubusercontent.com/evroon/msfs-rss/main/feeds/msfs.xml",
+            "category": "simulator"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "X-Plane news and updates from Laminar Research",
+          "tags": [
+            "x-plane",
+            "official"
+          ],
+          "config": {
+            "name": "X-Plane Blog",
+            "url": "https://www.x-plane.com/feed/",
+            "category": "simulator"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "New add-ons for Microsoft Flight Simulator: aircraft, scenery, utilities",
+          "tags": [
+            "msfs",
+            "addons"
+          ],
+          "config": {
+            "name": "MSFS Addons",
+            "url": "https://msfsaddons.com/feed/",
+            "category": "msfsaddons"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Flight simulation news site: add-ons, simulators, reviews",
+          "tags": [
+            "msfs",
+            "x-plane",
+            "addons",
+            "press"
+          ],
+          "config": {
+            "name": "FSElite",
+            "url": "https://fselite.net/feed/",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Flight simulation news and analysis",
+          "tags": [
+            "press"
+          ],
+          "config": {
+            "name": "Threshold",
+            "url": "https://www.thresholdx.net/feed",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Long-running flight simulation news site",
+          "tags": [
+            "press",
+            "addons"
+          ],
+          "config": {
+            "name": "simFlight",
+            "url": "https://www.simflight.com/feed/",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Flight simulation news",
+          "tags": [
+            "press"
+          ],
+          "config": {
+            "name": "FSNews",
+            "url": "https://fsnews.eu/feed/",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Flight simulation blog: aircraft and add-on coverage",
+          "tags": [
+            "press"
+          ],
+          "config": {
+            "name": "Stormbirds",
+            "url": "https://stormbirds.blog/feed/",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Releases of the FlyByWire open-source A32NX and A380X",
+          "tags": [
+            "msfs",
+            "freeware",
+            "airbus"
+          ],
+          "config": {
+            "name": "FlyByWire releases",
+            "url": "https://github.com/flybywiresim/aircraft/releases.atom",
+            "category": "freeware"
+          }
+        },
+        {
+          "type": "reddit_subreddit",
+          "description": "Reddit community r/flightsim",
+          "tags": [
+            "community",
+            "flightsim"
+          ],
+          "config": {
+            "subreddit": "flightsim",
+            "sort": "top",
+            "fetch_limit": 15,
+            "min_score": 100
+          }
+        },
+        {
+          "type": "reddit_subreddit",
+          "description": "Reddit community r/MicrosoftFlightSim",
+          "tags": [
+            "community",
+            "msfs"
+          ],
+          "config": {
+            "subreddit": "MicrosoftFlightSim",
+            "sort": "top",
+            "fetch_limit": 15,
+            "min_score": 150
+          }
+        }
+      ]
+    }
+  ]
+}

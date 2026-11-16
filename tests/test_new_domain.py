@@ -336,13 +336,57 @@ def test_presets_come_from_horizons_library_without_any_network_call(client, dra
         for source, _ in expected
     ]
     assert answer["suggestions"] and all(s["origin"] == "preset" for s in answer["suggestions"])
-    assert "Security / Privacy" in answer["themes"]
+    assert "Security / Privacy (Horizon)" in answer["themes"]
 
-    none = client.post("/api/domains/boating/source-presets", json={"interests": "flight simulator"}).json()
-    assert none["suggestions"] == [] and len(none["themes"]) == 8
+    none = client.post("/api/domains/boating/source-presets", json={"interests": "underwater basket weaving"}).json()
+    assert none["suggestions"] == [] and "Security / Privacy (Horizon)" in none["themes"]
     assert client.post("/api/setup/presets", json={"interests": " "}).status_code == 400
 
 
 def test_a_preset_source_is_built_by_horizon_like_any_other(client, draft):
     preset = client.post("/api/setup/presets", json={"interests": "rust"}).json()["suggestions"][0]
     assert client.post("/api/domains/boating/source-add", json={"type": preset["type"], "config": preset["config"]}).status_code == 200
+
+
+def test_masthead_ships_a_flight_simulation_list_in_horizons_format(client):
+    answer = client.post("/api/setup/presets", json={"interests": "simulation de vol"}).json()
+    assert answer["problems"] == []
+    assert answer["suggestions"] and {s["theme"] for s in answer["suggestions"]} == {"Flight simulation (MastHead)"}
+    assert any(s["config"].get("url") == "https://fselite.net/feed/" for s in answer["suggestions"])
+
+
+def test_a_users_list_is_read_and_a_broken_one_is_reported_not_half_read(client, home):
+    folder = home / "presets"
+    folder.mkdir()
+    (folder / "sailing.json").write_text(json.dumps({"domains": [{"id": "sailing", "name": "Sailing", "keywords": ["regatta"],
+        "sources": [{"type": "rss", "description": "Sail news", "tags": [], "config": {"name": "Sail", "url": "https://example.org/sail.xml"}}]}]}),
+        encoding="utf-8")
+    (folder / "broken.json").write_text(json.dumps({"domains": [{"name": "Broken", "keywords": ["regatta"],
+        "sources": [{"type": "rss", "config": {"name": "ok", "url": "https://example.org/ok.xml"}}, {"type": "website", "config": {}}]}]}),
+        encoding="utf-8")
+    answer = client.post("/api/setup/presets", json={"interests": "regatta"}).json()
+    assert [s["config"]["url"] for s in answer["suggestions"]] == ["https://example.org/sail.xml"]
+    assert answer["suggestions"][0]["theme"] == "Sailing (yours)"
+    assert len(answer["problems"]) == 1 and answer["problems"][0].startswith("broken.json")
+
+
+def test_a_domain_is_shared_as_a_preset_list_that_the_search_then_finds(client, draft):
+    from masthead.preset_lists import _check_list
+
+    raw = draft.raw_config()
+    raw["sources"]["reddit"] = {"enabled": True, "subreddits": [{"subreddit": "sailing", "min_score": 20}]}
+    raw["sources"]["google_news"] = {"enabled": True, "query": "sailing"}
+    draft.write_raw_config(raw)
+
+    assert client.post("/api/domains/boating/preset-share", json={"name": "Boating", "keywords": ""}).status_code == 400
+    written = client.post("/api/domains/boating/preset-share", json={"name": "Boating", "keywords": "boating, sailing"}).json()
+    assert written["sources"] == 2 and written["left_out"] == ["google_news"]
+    data = json.loads(written["text"])
+    assert _check_list(data)[0]["keywords"] == ["boating", "sailing"]
+    assert {s["type"] for s in data["domains"][0]["sources"]} == {"rss", "reddit_subreddit"}
+
+    again = client.post("/api/domains/boating/preset-share", json={"name": "Boating", "keywords": "boating"})
+    assert again.status_code == 409
+    assert client.post("/api/domains/boating/preset-share", json={"name": "Boating", "keywords": "boating", "replace": True}).status_code == 200
+    found = client.post("/api/setup/presets", json={"interests": "boating"}).json()["suggestions"]
+    assert {s["theme"] for s in found} == {"Boating (yours)"} and len(found) == 2
