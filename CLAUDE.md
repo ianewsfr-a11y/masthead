@@ -204,7 +204,8 @@ Outside the first rule: not built unless the owner asks.
 - Published under the name **Ergonia**: copyright holder in `LICENSE`, licence MIT.
 - Public repository: https://github.com/ianewsfr-a11y/masthead (the account `ianewsfr-a11y`).
 - The name "MastHead" was checked by the owner and is clear to use. No domain name of its own for now; if one is needed, it goes under Ergonia's domain.
-- Horizon's author may be contacted (approved). Done on GitHub, see "State of the prototype".
+- Horizon's author contacted on 16 November 2026: https://github.com/Thysrael/Horizon/discussions/245 (Show and tell). It presents MastHead, says the preset file is copied under Horizon's MIT licence, reports two findings (the `.env` loaded with `override=False` across workspaces; keywords matched as substrings), offers preset lists back to Horizon, and asks whether he wants MastHead named or described differently. Watch it for an answer.
+- The repository was made public on 16 November 2026. Merged branches were deleted; `feat/server-mode` (draft PR #2) is kept.
 - The public files hold no secret and no personal detail of the owner: keep it that way (no name, no user path, no key). One past commit holds a Windows user path in `docs/horizon-setup-plan.md`; history was not rewritten.
 
 ## Open decisions (ask the owner, do not decide)
