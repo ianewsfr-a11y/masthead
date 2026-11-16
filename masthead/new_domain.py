@@ -128,10 +128,16 @@ def discard(domain: Domain) -> None:
 # -- editorial rules --------------------------------------------------------------
 
 
-def _remember_form(domain: Domain, fields: dict[str, Any]) -> None:
+def _remember_form(domain: Domain, fields: dict[str, Any], by_user: bool = False) -> None:
     meta = domain.meta()
     meta["profile_form"] = fields
+    if by_user:
+        meta["rules_saved"] = True
     _write_json(domain.meta_path, meta)
+
+
+class HandWrittenRules(Exception):
+    """The form would overwrite profile files written outside MastHead."""
 
 
 def profile_dir(domain: Domain) -> Path:
@@ -140,15 +146,28 @@ def profile_dir(domain: Domain) -> Path:
 
 
 def profile_form_state(domain: Domain) -> dict[str, Any]:
-    fields = domain.meta().get("profile_form") or profile_form.defaults(domain.name, domain.meta().get("description"))
-    return {"fields": fields, "files": profile_form.read_files(profile_dir(domain))}
+    meta = domain.meta()
+    fields = meta.get("profile_form") or profile_form.defaults(domain.name, meta.get("description"))
+    return {
+        "fields": fields,
+        "files": profile_form.read_files(profile_dir(domain)),
+        # The form owns the files only when MastHead wrote them; otherwise they are edited as text.
+        "managed": "profile_form" in meta,
+        "saved_by_user": meta.get("rules_saved") is True,
+        "profile_id": profile_dir(domain).name,
+    }
 
 
-def save_profile_form(domain: Domain, fields: Any) -> dict[str, Any]:
+def save_profile_form(domain: Domain, fields: Any, replace: bool = False) -> dict[str, Any]:
+    if "profile_form" not in domain.meta() and not replace:
+        raise HandWrittenRules(
+            "This domain's rules were written outside MastHead. Edit the files as text, "
+            "or choose to replace them with the form."
+        )
     cleaned = profile_form.clean(fields)
     folder = profile_dir(domain)
     profile_form.write_files(folder, folder.name, profile_form.render(folder.name, cleaned))
-    _remember_form(domain, cleaned)
+    _remember_form(domain, cleaned, by_user=True)
     return profile_form_state(domain)
 
 
@@ -159,10 +178,75 @@ def save_profile_file(domain: Domain, name: Any, text: Any) -> dict[str, Any]:
         raise profile_form.ProfileFormError("The text cannot be empty.")
     folder = profile_dir(domain)
     profile_form.write_files(folder, folder.name, {name: text})
+    meta = domain.meta()
+    meta["rules_saved"] = True
+    _write_json(domain.meta_path, meta)
     return profile_form_state(domain)
 
 
+# -- subject -----------------------------------------------------------------------
+
+
+def update_subject(domain: Domain, body: dict[str, Any]) -> None:
+    """Name and description (MastHead's), languages (Horizon's config)."""
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise DomainError("Give the domain a name.")
+    if len(name) > 80:
+        raise DomainError("The name is longer than 80 characters.")
+    languages = _languages(body.get("languages"))
+    description = str(body.get("description") or "").strip() or None
+    raw = domain.raw_config()
+    raw.setdefault("ai", {})["languages"] = languages
+    domain.write_raw_config(raw)  # Horizon checks it first
+    meta = domain.meta()
+    meta.update(name=name, description=description)
+    _write_json(domain.meta_path, meta)
+
+
 # -- sources -----------------------------------------------------------------------
+
+MAX_PASTED_LINES = 50
+_GITHUB = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]+)(?:/([A-Za-z0-9._-]+))?(?:/.*)?$")
+_REDDIT = re.compile(r"^(?:(?:https?://)?(?:www\.|old\.)?reddit\.com/)?/?r/([A-Za-z0-9_]{2,21})/?$")
+_TELEGRAM = re.compile(r"^(?:https?://)?t\.me/(?:s/)?([A-Za-z0-9_]{4,32})/?$")
+
+
+def parse_source_line(line: str) -> dict[str, Any]:
+    """What kind of source a pasted line is. Read from the text only: no site is visited."""
+    text = line.strip()
+    result: dict[str, Any] = {"line": line, "kind": None, "fields": None, "error": None}
+    name = None
+    if "|" in text:
+        name, _, text = (part.strip() for part in text.partition("|"))
+    if match := _GITHUB.match(text):
+        owner, repo = match.groups()
+        if repo:
+            result.update(kind="github_repo", fields={"owner": owner, "repo": repo.removesuffix(".git")})
+        else:
+            result.update(kind="github_user", fields={"username": owner})
+    elif match := _REDDIT.match(text):
+        result.update(kind="reddit_subreddit", fields={"subreddit": match.group(1)})
+    elif match := _TELEGRAM.match(text):
+        result.update(kind="telegram", fields={"channel": match.group(1)})
+    elif re.match(r"^(https?://)?(www\.)?github\.com\b", text):
+        result["error"] = "A GitHub address needs an owner, and a repository for its releases."
+    elif re.match(r"^https?://[^\s/]+\.[^\s/]+", text):
+        host = re.sub(r"^https?://(www\.)?", "", text).split("/")[0]
+        result.update(kind="rss", fields={"name": name or host, "url": text})
+    else:
+        result["error"] = ("Not recognised. Paste a feed address (https://...), github.com/owner/repo, "
+                           "r/subreddit or t.me/channel.")
+    return result
+
+
+def parse_sources(text: Any) -> list[dict[str, Any]]:
+    if not isinstance(text, str):
+        raise DomainError("Paste one source per line.")
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) > MAX_PASTED_LINES:
+        raise DomainError(f"Paste at most {MAX_PASTED_LINES} lines at a time.")
+    return [parse_source_line(line) for line in lines]
 
 
 def _field(fields: dict[str, Any], key: str) -> str:

@@ -101,10 +101,8 @@ def sources_view(domain: Domain, config: Config) -> list[dict[str, Any]]:
     return rows
 
 
-def set_source_enabled(domain: Domain, key: str, enabled: bool) -> None:
-    raw = domain.raw_config()
-    sources = raw.setdefault("sources", {})
-    kind, _, index = key.partition(":")
+def _switch(sources: dict[str, Any], key: str, enabled: bool) -> None:
+    kind, _, index = str(key).partition(":")
     definition = SOURCE_REGISTRY.get(kind)
     if definition is None:
         raise DomainError(f"Unknown source '{key}'.")
@@ -119,6 +117,22 @@ def set_source_enabled(domain: Domain, key: str, enabled: bool) -> None:
         if not isinstance(entry, dict):
             raise DomainError(f"Source '{key}' cannot be edited here.")
         entry["enabled"] = bool(enabled)
+
+
+def set_source_enabled(domain: Domain, key: str, enabled: bool) -> None:
+    set_sources_enabled(domain, [{"key": key, "enabled": enabled}])
+
+
+def set_sources_enabled(domain: Domain, changes: Any) -> None:
+    """Switch several sources in one write: all of them, or none if one is wrong."""
+    if not isinstance(changes, list) or not changes:
+        raise DomainError("Nothing to save.")
+    raw = domain.raw_config()
+    sources = raw.setdefault("sources", {})
+    for change in changes:
+        if not isinstance(change, dict) or not isinstance(change.get("enabled"), bool):
+            raise DomainError("Each change needs a source and on or off.")
+        _switch(sources, change.get("key", ""), change["enabled"])
     domain.write_raw_config(raw)
 
 

@@ -105,12 +105,18 @@
   };
 
   // replaceChildren would print "null" for an absent block, so absent blocks are dropped here.
-  const show = (...nodes) => view.replaceChildren(...nodes.flat(Infinity).filter((node) => node !== null && node !== undefined && node !== false));
+  const show = (...nodes) => {
+    view.replaceChildren(...nodes.flat(Infinity).filter((node) => node !== null && node !== undefined && node !== false));
+    view.inert = false;
+    view.removeAttribute('aria-busy');
+  };
+  // While the next screen loads, the one on display cannot be used: a click there would act on the wrong domain.
+  const busy = () => { view.inert = true; view.setAttribute('aria-busy', 'true'); };
 
   let toastTimer = null;
   function toast(message, isError) {
     const el = document.getElementById('toast');
-    el.textContent = message;
+    el.textContent = isError ? `Error: ${message}` : message;  // state in words, not only the border colour
     el.className = `toast ${isError ? 'error' : ''}`;
     el.hidden = false;
     clearTimeout(toastTimer);
@@ -123,7 +129,7 @@
   // ---------------------------------------------------------------- chrome
   const NAV = [
     ['domains', 'Domains', 'domains'],
-    ['sources', 'Sources and settings', 'sources'],
+    ['edit', 'Edit domain', 'sources'],
     ['runs', 'Runs', 'runs'],
     ['briefing', 'Briefing', 'briefing'],
   ];
@@ -161,8 +167,9 @@
       h('div', { class: 'spread' },
         h('div', { class: 'actions' }, h('span', { class: 'eyebrow' }, 'Domain'), h('span', { class: 'strong' }, domain.name),
           domain.draft ? pill('Draft', 'warn', 'alert') : null, h('span', { class: 'mono muted' }, facts.join(' · '))),
-        domain.draft ? h('a', { href: `#/new/${encodeURIComponent(domain.id)}`, class: 'strong' }, 'Continue setting up')
-          : h('a', { href: '#/domains', class: 'strong' }, 'All domains')));
+        h('div', { class: 'actions' },
+          h('a', { href: `#/edit/${encodeURIComponent(domain.id)}`, class: 'strong' }, domain.draft ? 'Continue setting up' : 'Edit domain'),
+          h('a', { href: '#/domains', class: 'strong' }, 'All domains'))));
   }
 
   function pageHead(title, lede, ...actions) {
@@ -186,9 +193,10 @@
           fact('Runs', number(domain.runs)),
           fact('Last run', domain.last_run ? when(domain.last_run) : 'never')),
       h('div', { class: 'actions' },
-        domain.draft ? h('a', { class: 'btn ghost', href: `#/new/${encodeURIComponent(domain.id)}` }, 'Continue setting up') : null,
-        h('button', { type: 'button', class: 'btn primary', onclick: () => { state.domain = domain.id; store.set(domain.id); window.location.hash = '#/runs'; } }, 'Open'),
-        h('a', { class: 'btn', href: '#/sources', onclick: () => { state.domain = domain.id; store.set(domain.id); } }, 'Sources and settings'))));
+        domain.draft
+          ? h('a', { class: 'btn primary', href: `#/edit/${encodeURIComponent(domain.id)}` }, 'Continue setting up')
+          : h('button', { type: 'button', class: 'btn primary', onclick: () => { state.domain = domain.id; store.set(domain.id); window.location.hash = '#/runs'; } }, 'Open'),
+        domain.draft ? null : h('a', { class: 'btn', href: `#/edit/${encodeURIComponent(domain.id)}` }, 'Edit domain'))));
 
     show(
       pageHead('Domains', 'One domain per subject you follow. Each has its own sources, rules, languages, model and history.',
@@ -199,108 +207,6 @@
         h('p', { class: 'hint' }, 'If you already use Horizon from the command line, import its configuration from your terminal:'),
         h('pre', { class: 'cmd' }, 'masthead import --id boating --name "Boating" \\\n  --config path/to/config.json --profiles path/to/profiles'),
         h('p', { class: 'hint' }, 'Then reload this page.')));
-  }
-
-  // ---------------------------------------------------------------- Sources and settings
-  let aiStatus = null;  // providers and key presence, for the AI panel; never a key
-  async function viewSources() {
-    const [overview, ai] = await Promise.all([api.get(domainPath()), api.get('/api/ai')]);
-    aiStatus = ai;
-    drawSources(overview);
-  }
-
-  function drawSources(overview) {
-    const settings = overview.settings;
-    const notices = [];
-    if (overview.missing_env.length) {
-      notices.push(notice('No AI key found',
-        `This domain needs ${overview.missing_env.join(', ')}. Enter it in the AI panel below (it is then shared by every domain using this provider), or put it in a .env file in ${overview.folder}. Until then you can collect, but not score.`));
-    }
-    for (const source of overview.sources.filter((s) => s.implicit)) {
-      notices.push(notice(`${source.label} is on by default`,
-        'Horizon reads this source unless it is switched off. You did not choose it: switch it off below if it does not belong to this domain.'));
-    }
-    for (const profile of settings.profiles.filter((p) => p.analysis_max_chars <= 1000)) {
-      notices.push(notice(`Stories are scored from their first ${number(profile.analysis_max_chars)} characters`,
-        `This is Horizon's default for the profile "${profile.name}". Scores may miss what an article says further down. Raise analysis_max_chars in the profile to change it.`, 'info'));
-    }
-    for (const warning of overview.warnings) notices.push(notice('Horizon reports', warning, 'info'));
-
-    const rows = overview.sources.map((source) => {
-      const input = h('input', {
-        type: 'checkbox', checked: source.enabled, 'aria-label': `${source.label}: ${source.enabled ? 'on' : 'off'}`,
-        onchange: async () => {
-          input.disabled = true;
-          try {
-            drawSources(await api.post(domainPath('/sources'), { key: source.key, enabled: input.checked }));
-            await loadDomains();
-            renderChrome('sources');
-            toast(`${source.label} switched ${input.checked ? 'on' : 'off'}. Applies from the next run.`);
-          } catch (error) { input.checked = !input.checked; input.disabled = false; toast(error.message, true); }
-        },
-      });
-      return h('tr', { class: source.enabled ? '' : 'off' },
-        h('td', {}, h('label', { class: 'switch' }, input, h('span', { class: 'track' }))),
-        h('td', {}, h('div', { class: 'src-name' }, source.label), h('div', { class: 'src-detail' }, source.detail)),
-        h('td', { class: 'meta' }, source.kind_name),
-        h('td', { class: 'meta' }, source.category || 'none'),
-        h('td', {}, source.implicit ? pill('On by default', 'warn', 'alert')
-          : source.enabled && source.empty ? pill('Nothing to read', 'idle', 'dash')
-            : source.enabled ? pill('On', 'ok', 'check') : pill('Off', 'idle', 'dash')));
-    });
-
-    const defaultProfile = settings.profiles.find((p) => p.default) || settings.profiles[0];
-    const threshold = h('input', { id: 'set-threshold', type: 'number', min: 0, max: 10, step: 0.5, value: defaultProfile && defaultProfile.threshold !== null ? defaultProfile.threshold : '' });
-    const maxItems = h('input', { id: 'set-max', type: 'number', min: 1, step: 1, value: settings.max_items || '' });
-    const hours = h('input', { id: 'set-hours', type: 'number', min: 1, step: 1, value: settings.time_window_hours });
-    const save = h('button', {
-      type: 'submit', class: 'btn primary',
-    }, 'Save settings');
-    const form = h('form', {
-      class: 'stack', onsubmit: async (event) => {
-        event.preventDefault();
-        const body = { time_window_hours: Number(hours.value) };
-        body.threshold = threshold.value === '' ? null : Number(threshold.value);
-        body.max_items = maxItems.value === '' ? null : Number(maxItems.value);
-        save.disabled = true;
-        try {
-          drawSources(await api.post(domainPath('/settings'), body));
-          toast('Settings saved. They apply from the next run.');
-        } catch (error) { save.disabled = false; toast(error.message, true); }
-      },
-    },
-      h('div', { class: 'field' }, h('label', { for: 'set-threshold' }, 'Minimum score'), threshold,
-        h('span', { class: 'help' }, 'From 0 to 10. Stories scored below it are left out. Leave empty to keep everything.')),
-      h('div', { class: 'field' }, h('label', { for: 'set-max' }, 'Stories per briefing'), maxItems,
-        h('span', { class: 'help' }, 'The most stories a briefing can hold. Leave empty for no maximum.')),
-      h('div', { class: 'field' }, h('label', { for: 'set-hours' }, 'Time window, in hours'), hours,
-        h('span', { class: 'help' }, 'How far back each run looks for new stories.')),
-      h('div', {}, save));
-
-    const limits = settings.groups.length
-      ? settings.groups.map((group) => fact(group.name, `at most ${group.limit}`))
-      : [fact('Group limits', 'none')];
-
-    show(
-      domainBar(),
-      pageHead('Sources and settings', 'What this domain reads, and the few settings that decide most of the result.'),
-      ...notices,
-      h('div', { class: 'cols' },
-        h('div', { class: 'col-main' },
-          panel('Sources',
-            h('p', { class: 'hint' }, `${plural(overview.sources.filter((s) => s.enabled).length, 'source is', 'sources are')} on. Every source Horizon will read is listed here, including the ones it enables on its own.`),
-            h('div', { class: 'table-wrap' }, h('table', {},
-              h('thead', {}, h('tr', {}, ...['On', 'Source', 'Type', 'Group', 'State'].map((label) => h('th', { scope: 'col' }, label)))),
-              h('tbody', {}, ...rows))))),
-        h('div', { class: 'col-side' },
-          panel('Essentials', form),
-          window.MastHeadAI.modelPanel(window.MastHead, overview, aiStatus, (fresh, ai) => {
-            if (ai) aiStatus = ai;
-            if (fresh) drawSources(fresh); else viewSources();
-          }),
-          panel('Limits per group', h('ul', { class: 'facts' }, ...limits),
-            h('p', { class: 'hint' }, 'A group gathers sources. Its limit keeps one family of sources from filling the briefing.')),
-          panel('Folder', h('pre', { class: 'cmd' }, overview.folder)))));
   }
 
   // ---------------------------------------------------------------- Runs
@@ -693,19 +599,56 @@
     state.domain = (state.domains.find((d) => d.id === wanted) || state.domains[0] || {}).id || null;
   }
 
+  // Leaving the domain editor with unsaved changes asks first. The editor stays as it is if the
+  // user keeps the changes: the address goes back and nothing is drawn again.
+  async function mayLeave() {
+    if (state.restoringHash) { state.restoringHash = false; return false; }
+    const editor = window.MastHeadEditor;
+    if (!editor || !editor.isDirty()) return true;
+    const [, route, argument] = window.location.hash.split('/');
+    const target = route === 'edit' ? (argument ? decodeURIComponent(argument) : state.domain) : null;
+    if (target === editor.domainId) {
+      state.domain = editor.domainId;
+      return window.location.hash !== state.lastHash;  // same editor and same address: keep it as it is
+    }
+    const leave = await window.MastHeadKit.confirmDialog(window.MastHead, {
+      title: 'Leave without saving?',
+      body: `Unsaved changes in: ${editor.dirtySteps().join(', ')}. They are lost if you leave.`,
+      confirm: 'Leave without saving', cancel: 'Stay', danger: true,
+    });
+    if (leave) { editor.forget(); return true; }
+    state.domain = editor.domainId;
+    store.set(editor.domainId);
+    if (window.location.hash !== state.lastHash) {
+      state.restoringHash = true;
+      window.location.hash = state.lastHash;
+    }
+    renderChrome('edit');
+    return false;
+  }
+
   async function render() {
+    if (!await mayLeave()) return;
+    state.lastHash = window.location.hash;
+    if (window.MastHeadEditor) window.MastHeadEditor = null;
     state.token += 1;
     const token = state.token;
+    busy();
     clearInterval(state.poll);
     const [, route = 'runs', argument] = window.location.hash.split('/');
+    const named = argument ? decodeURIComponent(argument) : null;
+    if (route === 'new' && named) { window.location.replace(`#/edit/${encodeURIComponent(named)}`); return; }
+    if (route === 'sources') { window.location.replace('#/edit'); return; }
     try {
       await loadDomains();
       if (token !== state.token) return;
+      // The domain named in the address is the active one, before the side menu is drawn.
+      if (route === 'edit' && named && state.domains.some((d) => d.id === named)) { state.domain = named; store.set(named); }
       renderChrome(route);
       if (!state.domain && route !== 'domains' && route !== 'new') { window.location.hash = '#/domains'; return; }
       if (route === 'domains') await viewDomains();
-      else if (route === 'new') await window.MastHeadNewDomain.view(argument ? decodeURIComponent(argument) : null, token);
-      else if (route === 'sources') await viewSources();
+      else if (route === 'new') await window.MastHeadDomainEditor.viewNew(token);
+      else if (route === 'edit') await window.MastHeadDomainEditor.view(named || state.domain, token);
       else if (route === 'briefing') await viewBriefing(argument);
       else await viewRuns(argument);
     } catch (error) {
@@ -715,12 +658,17 @@
     }
   }
 
-  // Shared with new-domain.js, which draws the New domain screen with the same helpers.
+  // Shared with the domain editor (domain-editor.js and its steps), which uses the same helpers.
   window.MastHead = {
     h, icon, pill, notice, fact, panel, api, toast, show, pageHead, plural, number, when, state, store, RUN_STATUS,
     isCurrent: (token) => token === state.token,
     openDomain: (id, hash) => { state.domain = id; store.set(id); window.location.hash = hash; },
+    refreshChrome: async () => { await loadDomains(); renderChrome(window.location.hash.split('/')[1] || 'runs'); },
   };
+  // Closing the tab with unsaved changes in the editor: the browser asks.
+  window.addEventListener('beforeunload', (event) => {
+    if (window.MastHeadEditor && window.MastHeadEditor.isDirty()) event.preventDefault();
+  });
 
   window.addEventListener('hashchange', render);
   render();

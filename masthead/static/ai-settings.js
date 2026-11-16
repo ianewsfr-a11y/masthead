@@ -44,9 +44,13 @@
         M.h('span', { class: 'help' }, 'Paste it here. MastHead keeps it on this computer and never shows it again.')),
       M.h('div', { class: 'row-actions' }, save,
         provider.key_source === 'shared' ? M.h('button', {
-          type: 'button', class: 'btn', onclick: () => {
-            if (!window.confirm(`Delete the saved ${provider.label} key? Domains using this provider will have no key unless they have their own.`)) return;
-            send('/api/ai/keys/delete', { name: provider.key_env }, `${provider.label} key deleted.`);
+          type: 'button', class: 'btn', onclick: async () => {
+            const sure = await window.MastHeadKit.confirmDialog(M, {
+              title: `Delete the saved ${provider.label} key?`,
+              body: 'Domains using this provider will have no key, unless they have their own in their .env file.',
+              confirm: 'Delete the key', danger: true,
+            });
+            if (sure) send('/api/ai/keys/delete', { name: provider.key_env }, `${provider.label} key deleted.`);
           },
         }, 'Delete the saved key') : null));
     const extras = provider.extra_env.map((name) => {
@@ -122,34 +126,5 @@
     return { nodes, values, chosen };
   }
 
-  // Sources and settings: the domain's AI, editable, and its key.
-  function modelPanel(M, overview, status, onSaved, title = 'AI') {
-    const ai = overview.settings.ai;
-    if (!status) return M.panel(title, M.h('p', { class: 'hint' }, 'Loading…'));
-    const fields = modelFields(M, status.providers, ai, 'ai');
-    const save = M.h('button', { type: 'submit', class: 'btn primary' }, 'Save the AI choice');
-    const form = M.h('form', {
-      class: 'stack', onsubmit: async (event) => {
-        event.preventDefault();
-        save.disabled = true;
-        try {
-          const fresh = await M.api.post(`/api/domains/${enc(overview.id)}/model`, fields.values());
-          M.toast('AI choice saved. It applies from the next run.');
-          onSaved(fresh, null);
-        } catch (error) { save.disabled = false; M.toast(error.message, true); }
-      },
-    }, ...fields.nodes, M.h('div', {}, save));
-    const provider = status.providers.find((p) => p.id === ai.provider);
-    const needsKey = provider ? provider.needs_key : Boolean(ai.api_key_env);
-    return M.panel(title,
-      form,
-      M.h('ul', { class: 'facts' },
-        M.fact('Languages', ai.languages.join(', ')),
-        M.fact('Temperature', String(ai.temperature))),
-      needsKey ? M.h('h3', {}, 'Key') : null,
-      needsKey ? keyStatus(M, ai.api_key_present, ai.key_source) : M.h('p', { class: 'hint' }, 'This provider needs no key.'),
-      needsKey && provider ? keyForm(M, provider, (fresh) => onSaved(null, fresh), 'ai-key') : null);
-  }
-
-  window.MastHeadAI = { keysPanel, modelPanel, modelFields, keyForm, keyStatus };
+  window.MastHeadAI = { keysPanel, modelFields, keyForm, keyStatus };
 })();
