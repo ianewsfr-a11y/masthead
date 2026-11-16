@@ -94,3 +94,7 @@ Horizon is a dependency, pinned to one commit. MastHead calls the pipeline servi
 ```bash
 pytest
 ```
+
+## Licence
+
+MIT (`LICENSE`). Horizon's preset file in `masthead/presets/` is Horizon's, under its own MIT licence. To propose a preset list or a change, see `CONTRIBUTING.md`.
