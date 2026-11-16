@@ -113,7 +113,10 @@ def create_app(client_factory=None) -> FastAPI:
     async def domain_overview(domain_id: str) -> dict[str, Any]:
         domain = get_domain(domain_id)
         service = MastHeadService(domain, client_factory=client_factory)
-        check = await service.validate_config(horizon_path=service.workspace)
+        rules_missing = service.rules_missing()
+        # Horizon's check loads the profiles; a draft has none until its rules are saved.
+        check = ({"missing_env": [], "warnings": []} if rules_missing
+                 else await service.validate_config(horizon_path=service.workspace))
         ctx = service.context()
         # Horizon checks the process environment; the domain's own .env counts too.
         missing = [name for name in check["missing_env"] if not env.is_available(domain, name)]
@@ -144,6 +147,7 @@ def create_app(client_factory=None) -> FastAPI:
             "settings": settings,
             "missing_env": missing,
             "warnings": warnings,
+            "rules_missing": rules_missing is not None,
         }
 
     @app.post("/api/domains/{domain_id}/model")
@@ -202,6 +206,9 @@ def create_app(client_factory=None) -> FastAPI:
     @app.post("/api/domains/{domain_id}/runs")
     async def start_run(domain_id: str, body: dict[str, Any]) -> JSONResponse:
         service = service_for(domain_id)
+        if service.rules_missing():
+            return JSONResponse({"error": "Save the editorial rules first: Horizon needs the domain's profile "
+                                          "before any run, even Collect only."}, status_code=409)
         ctx = service.context()
         hours = body.get("hours") or ctx.config.collection.time_window_hours
         if not isinstance(hours, int) or isinstance(hours, bool) or hours <= 0:
@@ -250,6 +257,10 @@ def create_app(client_factory=None) -> FastAPI:
             "languages": service.summary_languages(run_id),
             "pricing": service.domain.meta().get("pricing"),
             "max_items": ctx.config.digest.max_items,
+            # "Use this score from now on" changes this profile only.
+            "default_profile": ctx.config.processing.default_profile,
+            "default_profile_name": service.profile_name(ctx.config.processing.default_profile),
+            "profile_count": len(ctx.config.processing.profile_settings),
             "demo": bool(meta.get("masthead_demo")),
         }
 

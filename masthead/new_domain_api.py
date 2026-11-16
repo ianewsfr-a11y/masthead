@@ -24,7 +24,7 @@ def install(app: FastAPI, manager: RunManager) -> None:
 
     @app.exception_handler(new_domain.HandWrittenRules)
     async def hand_written(_: Request, exc: new_domain.HandWrittenRules):
-        return JSONResponse({"error": str(exc), "code": "HAND_WRITTEN_RULES"}, status_code=409)
+        return JSONResponse({"error": str(exc), "code": "HAND_WRITTEN_RULES", "files": exc.files}, status_code=409)
 
     @app.post("/api/domains/{domain_id}/subject")
     async def subject(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:

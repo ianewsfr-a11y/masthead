@@ -25,9 +25,12 @@ Ambition set by the owner: be the reference interface of its kind.
 - Decided on 14 November 2026: **local application only, for now.** Each user runs MastHead on their own computer and opens it in their browser. The user spends their own AI credit or uses a local model. Nothing leaves their machine except Horizon's own calls to sources and to the model.
 - Server mode (the same tool on the user's own VPS or NAS) is postponed: see "Ideas, not planned" after the roadmap. A hosted service run by us for all users (accounts, billing, storing customers' keys) is postponed further, until the open-source tool shows demand; do not build towards it.
 - One domain = one Horizon configuration and one data folder (own languages, model, schedule, cost).
+- Decided on 16 November 2026: **MastHead writes only what the user typed.** No threshold, maximum, category, per-source setting, starting text or added sentence; no key equal to Horizon's default. Each source added keeps `profile` (the domain's profile), which spares a classification call by the model. **The one value that differs from Horizon's defaults:** a new domain switches Hacker News, Reddit and Telegram off (`"enabled": false`), because Horizon reads them unless told otherwise, and shows them as off.
+- Decided on 16 November 2026: no starter domain and no `masthead demo` command. On first start the Domains screen offers to create a domain or to import a Horizon setup. The former starter and the demo run are test fixtures (`tests/fixtures/flight-sim`, `tests/demo_run.py`).
+- Decided on 16 November 2026: kept although they go beyond a pure interface: the system certificate store (truststore), each domain's `.env` kept to that domain, and the source test.
 - Decided on 14 November 2026: the AI of each domain (provider and model) is chosen in the interface, among Horizon's providers except ChatGPT (which signs in through Horizon's own command). The model is a free text field; the example under it comes from Horizon's `AI_PROVIDER_DEFAULTS`, never from a list kept by us.
 - Decided on 14 November 2026: AI keys can be entered in the interface. One key per provider, saved in `keys.env` in MastHead's home folder and shared by every domain using that provider. A domain's `.env` overrides it; the environment MastHead was started with (a Windows variable) overrides both. A key is never shown again, never returned by the API, never logged.
-- Settings in three levels: essential (about ten), advanced (about twenty), search across all 181.
+- Settings in three levels: essential (about ten), advanced (about twenty), search across all of Horizon's settings. Horizon's `Config` model has about 145 leaf settings at the pinned commit (counted on 16 November 2026, extractor variants included); the figure 181 written earlier could not be traced to the code.
 - Visual style: dark background `#0B0E14`, panels `#121722`, lines `#263043`, amber accent `#F2A93B`, blue `#7CB8FF`, orange `#FF9D6C`. Fonts: Space Grotesk (headings), Inter (body), JetBrains Mono (figures), with local fallbacks. No remote fonts or assets.
 
 ## Architecture
@@ -38,11 +41,11 @@ Ambition set by the owner: be the reference interface of its kind.
 - `masthead/journal.py`: the decision journal, pure functions over the JSON of Horizon's stage files. Stored per run as `masthead_decisions.json`.
 - `masthead/runner.py`: runs the pipeline stage by stage in the background (collect, score, select, write, briefing), one run at a time, with token usage per stage.
 - `masthead/config_view.py`: reads and edits the config file as written (so `${ENV}` placeholders survive), validated by Horizon's own model, with a `.bak` copy.
-- `masthead/domains.py`: domains live in `~/.masthead/domains/<id>/` (`MASTHEAD_HOME` overrides). Starter template in `masthead/templates/flight-sim/`.
+- `masthead/domains.py`: domains live in `~/.masthead/domains/<id>/` (`MASTHEAD_HOME` overrides). No domain is created on first start.
 - `masthead/server.py`: JSON API and static files. Loopback only; refuses foreign Host and Origin headers; strict Content-Security-Policy (no inline styles or scripts).
-- `masthead/demo.py`: a run of invented stories, every title starting with `[Demo]`, pushed through Horizon's real selection.
-- `masthead/cli.py`: `masthead` (serve), `masthead import`, `masthead demo`, `masthead domains`.
-- `masthead/new_domain.py`, `masthead/new_domain_api.py`, `masthead/profile_form.py`: creating and editing a domain (draft marked `"draft": true` in `domain.json`; pasted lines read as sources from their text only; sources tested by Horizon's collector in a scratch folder; suggestions from `src/setup/ai_recommend.py`; a form that writes Horizon's profile files, checked by Horizon's `ProfileRegistry`; hand-written profiles, `"profile_form"` absent from `domain.json`, are never overwritten by the form without `replace`).
+- `tests/demo_run.py` (test helper, not in the product): a run of invented stories, every title starting with `[Demo]`, pushed through Horizon's real selection. `tests/support.py` copies `tests/fixtures/flight-sim` into a test's MastHead folder.
+- `masthead/cli.py`: `masthead` (serve), `masthead import`, `masthead domains`.
+- `masthead/new_domain.py`, `masthead/new_domain_api.py`, `masthead/profile_form.py`: creating and editing a domain (draft marked `"draft": true` in `domain.json`; pasted lines read as sources from their text only; sources tested by Horizon's collector in a scratch folder; suggestions from `src/setup/ai_recommend.py`; a form that writes Horizon's profile files, checked by Horizon's `ProfileRegistry`. A draft has no profile until the rules are saved, and Horizon refuses any run, even Collect only, until then. The form writes `profile.json`, `analysis.md` and `enrichment.md` from what was typed, and creates `match.md` empty only if it is missing; it never writes `match.md` otherwise. The fingerprint of each file it writes is kept in `domain.json` (`profile_files`); a file whose content differs, or that the form never wrote, is replaced only with `replace`, after a confirmation naming it).
 - The domain editor, one screen to create and to change a domain (`#/new`, then `#/edit/<id>`): `static/domain-editor.js` (steps, what is missing, create or discard, Subject and AI, Settings, Trial run), `static/editor-sources.js`, `static/editor-rules.js`, `static/ui-kit.js` (`<dialog>` confirmations, unsaved-changes tracker). One Save button per step; moving between steps keeps what was typed; leaving with unsaved changes asks; the screen being replaced is inert while the next one loads.
 - `masthead/env.py`: applies a domain's values (shared keys, then its own `.env`) while one of its runs goes, and removes them afterwards; tells where a key comes from without reading it out. `MastHeadService._build_context` skips Horizon's own `.env` loader.
 - `masthead/keys.py`, `masthead/ai_api.py`, `masthead/static/ai-settings.js`: providers from Horizon's table, the shared keys file, and the AI keys and AI choice panels. `config_view.ai_choice` writes the `ai` section of Horizon's config.
@@ -54,7 +57,6 @@ Ambition set by the owner: be the reference interface of its kind.
 python -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 .venv\Scripts\python -m pytest
-.venv\Scripts\masthead demo
 .venv\Scripts\masthead
 ```
 
@@ -64,11 +66,19 @@ python -m venv .venv
 - Before saying an interface change is done, check every screen that shows the changed data, on the path the owner actually takes, in a browser.
 
 - Insert any text coming from a feed or a model as text, never as HTML.
-- Never show a number that was not measured. Cost in money appears only if the user gave their model's prices in `domain.json`; no price is hard-coded.
+- Never show a number that was not measured. Cost in money appears only if the user gave their model's prices in `domain.json`; no price is hard-coded. The format, written by hand: `"pricing": {"input_per_mtok": 3, "output_per_mtok": 15, "currency": "$"}` (prices per million tokens); the run inspector then shows an estimated cost after a run.
 - Every source Horizon will read must be visible, including the ones Horizon enables by default (Hacker News, Reddit, Telegram).
 - Keyboard access, visible focus, 44 px touch targets, and state never carried by colour alone.
 
 ## Known engine traps
+
+- The minimum score belongs to one profile (`processing.profile_settings.<profile>.threshold`). The Settings step and "Use this score from now on" change the profile shown (the domain's default profile) and nothing else; the replay itself applies the tested score to every story.
+- A run's time window is `collection.time_window_hours` (Horizon's default 24). The API accepts an `hours` value, which the interface never sends.
+- A MastHead run is Horizon's own staged sequence (`src/mcp/service.py:run_pipeline`): it never sends email, webhook or WeChat, does not check email subscriptions and does not copy the briefing to `docs/_posts`, which the `horizon` command does (`orchestrator.run`). Briefings are saved in `data/summaries/`, so Horizon's `history_search` finds them.
+- Horizon's source recommendation returns an empty list on any error (`src/setup/ai_recommend.py`), and MastHead keeps only the kinds it can add (feed, GitHub repository or user, subreddit, Telegram channel). "No suggestion" can therefore hide a failure.
+- The source test runs Horizon's collector on that source alone over the last 7 days (`new_domain.TEST_WINDOW_HOURS`), in a scratch folder with Horizon's built-in profiles.
+- `match.md` is read only to choose a profile for a source that names none (`src/ai/classifier.py`). Sources added in MastHead name the domain's profile, so `match.md` has no effect there.
+- Horizon accepts empty prompt files, and requires at least one enrichment block (`src/processing/profiles.py`). MastHead always writes the `summary` block, marked primary as in Horizon's built-in profiles.
 
 - Hacker News and Telegram are on by default in Horizon unless switched off explicitly.
 - Scoring only sees the first 1,000 characters of an article by default (`analysis_max_chars` in the profile).
@@ -85,7 +95,7 @@ python -m venv .venv
 
 ## State of the prototype
 
-Covered by tests (`tests/`, 75 tests, including 13 for New domain, 23 for AI keys and AI choice and 17 for the domain editor; no model needed; one test reaches the network; every test gets its own MastHead folder): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
+Covered by tests (`tests/`, 80 tests as counted by pytest on 16 November 2026; no model needed; one test reaches the network; every test gets its own MastHead folder): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
 
 First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
 
@@ -130,7 +140,6 @@ New domain (first version, replaced by the editor above), checked on 14 November
 
 Never verified yet:
 
-- The starter domain's feeds (`templates/flight-sim`): in a collect on 14 November 2026, FSElite and MSFS Addons answered; `flightsimulator.com/feed/` answered 500 and was replaced by the mirror the owner's config uses, which worked there but not yet in the starter.
 - Cost in money: no prices in `domain.json`, so none is shown.
 
 ## Roadmap, in order
@@ -138,13 +147,30 @@ Never verified yet:
 Only what Horizon already does, shown and driven from the interface.
 
 1. First real run with the owner's existing Horizon configuration, imported through `masthead import`. Fix whatever breaks. Done on 14 November 2026 (see State of the prototype).
-2. Create a domain from the interface ("New domain", plan approved 14 November 2026; built 14 November 2026, see State of the prototype):
-   1. **Subject:** name, id, short description, languages, model (defaults from an existing domain). Says where to put the key; never asks for it.
+2. Create a domain from the interface, and change it afterwards in the same editor ("New domain", plan approved 14 November 2026; built 14 November 2026; one editor for creating and changing, pull request #7):
+   1. **Subject:** name, id, short description, languages, AI (provider and model, optionally copied from an existing domain). The key is entered in the interface (AI keys) and never shown again.
    2. **Sources:** added by hand, or suggested by Horizon's own recommendation function (`src/setup/ai_recommend.py`; tokens measured and shown). Every source is tested with Horizon's collector on that source alone before it can be ticked; a failing source stays unticked. Hacker News, Reddit and Telegram are switched off explicitly and shown. No automatic feed discovery from a website. No ready-made source lists for now.
    3. **Editorial rules:** a form that fills Horizon's profile files (`profile.json`, `match.md`, `analysis.md`, `enrichment.md`), shown and editable as text. No draft written by the model.
    4. **Trial run:** Collect only, then score and select without writing; the inspector and the replay to adjust the minimum score. Then create the domain or discard it (the domain is a marked draft until then).
 3. Edit model, languages and the amount of text shown to the model from the interface (Horizon settings). Provider and model: done 14 November 2026. Languages and the amount of text: still to do.
 4. Advanced settings level, then search across all of Horizon's settings.
+
+## Not covered yet
+
+What Horizon can do and MastHead does not show or drive, from the scope audit of 16 November 2026 (`docs/scope-audit.md`). Listed so nobody assumes it works. **None of these lines is to be built for now.**
+
+| Family | Horizon can | MastHead |
+|---|---|---|
+| AI providers | anthropic, openai, azure, ali, gemini, doubao, minimax, deepseek, ollama, openai-chatgpt; `provider_chain`; `extra_body`, `temperature`, `max_tokens`, `throttle_sec`, concurrency | Provider, model and key: yes (except ChatGPT sign-in). The rest: not shown or read only. |
+| Source types | RSS, GitHub (releases, user events), Hacker News, Reddit (subreddits, users), Telegram, Twitter, OpenBB, OSSInsight, GDELT, Google News | All listed and switchable. Only RSS, GitHub, subreddit and Telegram can be added; no per-source setting is editable; Reddit users, Twitter, OpenBB, OSSInsight, GDELT and Google News cannot be added or set up. |
+| Extractors | trafilatura, firecrawl, outcrawl, specstream, per RSS feed | None. |
+| Profiles | Several per domain, classification by `match.md`, `display_names`, `sampling`, `enrichment_max_chars`, blocks and tools | One profile per domain through the form, or its files as text. The rest: not editable. |
+| Selection | Threshold per profile, link merge, topic dedup per profile, group limits by category or profile, `default_group_limit`, `max_items`, `profile_order` | Minimum score of the default profile, maximum, time window; group limits read only; the journal explains every outcome. Not editable: `topic_dedup`, groups, `group_by`, `default_group_limit`, `profile_order`. |
+| Writing | Enrichment with `web_search` and `history_search`, one text per language, Markdown briefing, copy to `docs/_posts` | Briefing per language. No copy to `docs/_posts`; how often `web_search` was used is not shown. |
+| Email and webhook | Email (SMTP, IMAP subscriptions), webhook (generic, Feishu, Lark, DingTalk, Slack, Discord), WeChat | None: a MastHead run never sends. |
+| Scheduling | None in Horizon | Nothing to show (a scheduler exists only on the postponed `feat/server-mode` branch). |
+| Setup wizard | Questions, presets from `horizon1123.top`, local matching, AI recommendations | Only the AI recommendations. |
+| Commands | `horizon --hours`, `horizon-wizard`, `horizon-chatgpt`, `horizon-webhook`, `horizon-wechat`, `horizon-mcp` (13 tools) | Runs, validation, stages, run list and briefing. Not: ChatGPT, webhook, WeChat, `hz_send_webhook`. |
 
 ## Ideas, not planned
 

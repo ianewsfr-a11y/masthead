@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 DOMAIN_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,40}$")
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 
 class DomainError(Exception):
@@ -106,18 +105,6 @@ def get_domain(domain_id: str) -> Domain:
     return Domain(id=domain_id, path=path)
 
 
-def create_from_template(domain_id: str, template: str = "flight-sim") -> Domain:
-    """Create a domain from a bundled starter."""
-    source = TEMPLATES_DIR / template
-    if not source.is_dir():
-        raise DomainError(f"Unknown template '{template}'.")
-    target = domains_dir() / _check_id(domain_id)
-    if target.exists():
-        raise DomainError(f"Domain '{domain_id}' already exists.")
-    shutil.copytree(source, target)
-    return Domain(id=domain_id, path=target)
-
-
 def import_domain(domain_id: str, name: str, config: Path, profiles: Path | None = None) -> Domain:
     """Create a domain from an existing Horizon config file and profiles folder."""
     config = Path(config).expanduser().resolve()
@@ -150,8 +137,3 @@ def import_domain(domain_id: str, name: str, config: Path, profiles: Path | None
         shutil.rmtree(target, ignore_errors=True)
         raise
 
-
-def ensure_starter_domain() -> None:
-    """On first launch, give the user one working domain to look at."""
-    if not list_domains():
-        create_from_template("flight-sim")

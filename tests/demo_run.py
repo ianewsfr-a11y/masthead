@@ -16,8 +16,8 @@ from typing import Any
 from src.ai.prompting.deduplication import TOPIC_DEDUP_SYSTEM
 from src.mcp.horizon_adapter import dicts_to_items, items_to_dicts
 
-from .domains import Domain
-from .service import MastHeadService
+from masthead.domains import Domain
+from masthead.service import MastHeadService
 
 # (score, source, category, title, duplicate group or None)
 _PASSING = [

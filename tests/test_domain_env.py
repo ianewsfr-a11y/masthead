@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from masthead.domains import create_from_template
+from support import create_from_template
 from masthead.env import DomainEnvironment
 from masthead.runner import RunManager
 from masthead.server import create_app

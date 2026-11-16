@@ -13,7 +13,8 @@ import stat
 import pytest
 from fastapi.testclient import TestClient
 
-from masthead.domains import create_from_template, get_domain
+from masthead.domains import get_domain
+from support import create_from_template
 from masthead.env import DomainEnvironment
 from masthead.keys import keys_path
 from masthead.server import create_app

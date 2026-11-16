@@ -33,7 +33,7 @@ masthead
 
 `masthead` starts a server on `http://127.0.0.1:8765/` and opens it in your browser. The server listens on the loopback address only.
 
-On first start MastHead creates a starter domain, `flight-sim`, in `~/.masthead/domains/` (set `MASTHEAD_HOME` to use another folder).
+Domains are kept in `~/.masthead/domains/` (set `MASTHEAD_HOME` to use another folder). On first start there is none: the Domains screen offers to create one or to import the setup you already use with Horizon.
 
 ## Your AI key
 
@@ -53,6 +53,8 @@ The screens only say whether a key is present and where it comes from.
 
 In *Domains*, press **New domain**, then give a name, languages and the AI. The domain stays a draft until you create it. A domain already created opens in the same editor with **Edit domain**.
 
+MastHead writes only what you type. The one exception: Hacker News, Reddit and Telegram, which Horizon reads unless told otherwise, are switched off in a new domain, and shown as off.
+
 The editor shows one step at a time, with the steps on the side and what is missing at the top:
 
 1. **Subject and AI:** name, languages, provider and model. The key is entered here too.
@@ -61,9 +63,10 @@ The editor shows one step at a time, with the steps on the side and what is miss
    - Each line is tested with Horizon's own collector over the last 7 days. Tick the ones to add.
    - Horizon can also suggest sources; this uses your model, and the tokens are shown.
 3. **Editorial rules:**
-   - Three questions: what belongs, what does not, what makes a story important.
-   - The rest is under *Advanced*.
-   - A domain brought from Horizon with hand-written profile files opens on the files as text, and the form never replaces them without asking.
+   - A form that starts empty, with examples under each field: how the model scores a story, and what it writes for each kept story. Nothing is written before you save, and nothing is added to what you type.
+   - Or the profile files themselves, as text. `match.md` is only there: Horizon reads it to choose a profile when a source names none, and the sources added in MastHead always name the domain's profile.
+   - A file changed outside the form is never replaced by the form without a confirmation that names it.
+   - Horizon needs the rules before any run, even *Collect only*.
 4. **Settings:** minimum score, stories per briefing, time window.
 5. **Trial run:** *Collect only* calls no model; *Score and select* scores with the model but writes nothing. Open the run in the inspector.
 
@@ -75,14 +78,6 @@ Each step has its own **Save** button and says when it has unsaved changes. Movi
 masthead import --id flight-sim --name "Flight simulation" \
   --config path/to/horizon/config.json --profiles path/to/horizon/profiles
 ```
-
-## Explore without a key
-
-```bash
-masthead demo
-```
-
-adds a run made of invented stories (every title starts with `[Demo]`). The selection is computed by Horizon's own filtering, merging and limits.
 
 ## How it relates to Horizon
 

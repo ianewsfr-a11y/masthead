@@ -1,14 +1,20 @@
 """The editorial rules form: fields that fill Horizon's profile files.
 
-A Horizon profile is a folder with profile.json, match.md (what belongs),
-analysis.md (how to score) and enrichment.md (what to write). The form only
-fills these files, following the structure of Horizon's own built-in profiles.
-Horizon adds its own rules and output format around them. Nothing is written
-by a model.
+A Horizon profile is a folder with profile.json and three prompt files:
+match.md (used only to choose a profile when a source does not name one),
+analysis.md (how to score) and enrichment.md (what to write). Horizon requires
+profile.json (id, name, the three file names, at least one enrichment block)
+and the three files, which may be empty (src/processing/profiles.py).
+
+The form writes only what the user typed: no starting text, no added sentence.
+The only structure it adds is what Horizon needs to read the text: the score
+level in front of each scoring line, and the block id in front of each block's
+instruction, so the model knows which instruction is for which block.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -17,8 +23,9 @@ from typing import Any
 
 TIER_LABELS = ["9-10", "7-8", "5-6", "3-4", "0-2"]
 TEXT_FILES = ("match.md", "analysis.md", "enrichment.md")
-_REQUIRED_TEXT = ("profile_name", "belongs", "goal", "editor_role", "summary", "writing_rules")
-_OPTIONAL_TEXT = ("typical", "excluded", "guidance", "background_text", "impact_text", "community_text")
+FORM_FILES = ("profile.json", "analysis.md", "enrichment.md")  # match.md is never written by the form
+_TEXT = ("profile_name", "goal", "guidance", "editor_role", "summary", "background_text",
+         "impact_text", "community_text", "writing_rules")
 _SWITCHES = ("background", "web_search", "impact", "community")
 _MAX_FIELD = 4000
 
@@ -27,50 +34,19 @@ class ProfileFormError(ValueError):
     """A form value that cannot be used."""
 
 
-def defaults(name: str, description: str | None) -> dict[str, Any]:
-    """Neutral starting values, to be replaced by the user's own rules."""
-    subject = name.strip()
-    about = f" {description.strip()}" if description and description.strip() else ""
-    return {
-        "profile_name": f"{subject} news",
-        "belongs": f"Use this profile for timely news about {subject}.{about}",
-        "typical": "Releases, announcements, dated events, and analyses tied to a recent development.",
-        "excluded": "Promotional material without substantive information, routine updates, and off-topic items.",
-        "goal": f"Evaluate how important each item is for readers who follow {subject}.",
-        "tiers": [
-            "Major news that changes things for most readers.",
-            "Important developments worth prompt attention, with concrete details.",
-            "Interesting but not urgent: incremental changes, useful guides.",
-            "Routine updates, common knowledge, or mostly promotion.",
-            "Noise: off-topic, trivial, or purely promotional.",
-        ],
-        "guidance": "Consider novelty, likely impact for readers, source quality and concrete supporting details. "
-                    "Do not reward exaggerated headlines.",
-        "editor_role": f"You are an editor helping readers understand important {subject} news accurately and efficiently.",
-        "summary": "In 2-4 complete sentences, lead with what actually changed and for whom. Include concrete names, "
-                   "versions, dates, prices or availability. Distinguish an announcement from something already released.",
-        "background": True,
-        "background_text": "In 1-3 complete sentences, explain the earlier development that makes this news "
-                           "understandable. Do not repeat the summary.",
-        "web_search": True,
-        "impact": False,
-        "impact_text": "State one concrete consequence for readers, supported by the source. Omit the block otherwise.",
-        "community": False,
-        "community_text": "In 1-2 sentences, summarize the most useful point from supplied comments. "
-                          "Omit the block when there is none.",
-        "writing_rules": "Use a short, accurate title of no more than 15 words, without clickbait. "
-                         "Every block must contain complete sentences. Do not invent details.",
-        "analysis_max_chars": 4000,
-    }
+def empty() -> dict[str, Any]:
+    """The form before the user writes anything."""
+    return {**{key: "" for key in _TEXT}, **{key: False for key in _SWITCHES},
+            "tiers": [""] * len(TIER_LABELS), "analysis_max_chars": None}
 
 
-def _text(fields: dict[str, Any], key: str, required: bool) -> str:
+def _text(fields: dict[str, Any], key: str) -> str:
     value = fields.get(key, "")
+    if value is None:
+        return ""
     if not isinstance(value, str):
         raise ProfileFormError(f"'{key}' must be text.")
     value = value.strip()
-    if required and not value:
-        raise ProfileFormError(f"'{key}' cannot be empty.")
     if len(value) > _MAX_FIELD:
         raise ProfileFormError(f"'{key}' is longer than {_MAX_FIELD} characters.")
     return value
@@ -79,67 +55,76 @@ def _text(fields: dict[str, Any], key: str, required: bool) -> str:
 def clean(fields: Any) -> dict[str, Any]:
     if not isinstance(fields, dict):
         raise ProfileFormError("The form is missing.")
-    result: dict[str, Any] = {key: _text(fields, key, True) for key in _REQUIRED_TEXT}
-    result.update({key: _text(fields, key, False) for key in _OPTIONAL_TEXT})
+    result: dict[str, Any] = {key: _text(fields, key) for key in _TEXT}
     for key in _SWITCHES:
-        if not isinstance(fields.get(key), bool):
+        value = fields.get(key, False)
+        if not isinstance(value, bool):
             raise ProfileFormError(f"'{key}' must be true or false.")
-        result[key] = fields[key]
-    tiers = fields.get("tiers")
+        result[key] = value
+    tiers = fields.get("tiers") or [""] * len(TIER_LABELS)
     if not isinstance(tiers, list) or len(tiers) != len(TIER_LABELS):
-        raise ProfileFormError("The scoring grid needs five levels.")
-    result["tiers"] = [_text({"tier": tier}, "tier", True) for tier in tiers]
+        raise ProfileFormError("The scoring grid has five levels.")
+    result["tiers"] = [_text({"tier": tier}, "tier") for tier in tiers]
     chars = fields.get("analysis_max_chars")
-    if isinstance(chars, bool) or not isinstance(chars, int) or not 500 <= chars <= 100_000:
-        raise ProfileFormError("The text read for scoring must be from 500 to 100,000 characters.")
+    if chars is not None and (isinstance(chars, bool) or not isinstance(chars, int) or not 500 <= chars <= 100_000):
+        raise ProfileFormError("The text read for scoring must be from 500 to 100,000 characters, or left empty.")
     result["analysis_max_chars"] = chars
     return result
 
 
-def render(profile_id: str, fields: dict[str, Any]) -> dict[str, str]:
-    """The four profile files for these (cleaned) fields."""
-    match = [f"# {fields['profile_name']}", fields["belongs"]]
-    if fields["typical"]:
-        match.append(f"Typical items: {fields['typical']}")
-    if fields["excluded"]:
-        match.append(f"Do not use this profile for: {fields['excluded']}")
+def _join(parts: list[str]) -> str:
+    text = "\n\n".join(part for part in parts if part)
+    return text + "\n" if text else ""
 
-    rubric = "\n".join(f"- **{label}:** {text}" for label, text in zip(TIER_LABELS, fields["tiers"]))
-    analysis = ["# Evaluation goal", fields["goal"], "# Scoring rubric", rubric]
-    analysis += ["# Evaluation guidance", fields["guidance"]] if fields["guidance"] else []
-    analysis.append("Use three to five specific topic tags.")
 
-    blocks_text = [f"- `summary`: {fields['summary']}"]
-    blocks = [{"id": "summary", "type": "section", "tools": [], "primary": True}]
+def render(profile_id: str, fields: dict[str, Any], fallback_name: str) -> dict[str, str]:
+    """profile.json, analysis.md and enrichment.md for these (cleaned) fields."""
+    rubric = "\n".join(f"- {label}: {text}" for label, text in zip(TIER_LABELS, fields["tiers"]) if text)
+    analysis = _join([fields["goal"], rubric, fields["guidance"]])
+
+    blocks: list[dict[str, Any]] = [{"id": "summary", "primary": True}]  # Horizon needs one block
+    instructions = [("summary", fields["summary"])]
     if fields["background"]:
-        search = " Use `web_search` only when an external fact is needed." if fields["web_search"] else ""
-        blocks_text.append(f"- `background`: {fields['background_text']}{search}")
         tools = ["history_search"] + (["web_search"] if fields["web_search"] else [])
-        blocks.append({"id": "background", "type": "section", "tools": tools})
+        blocks.append({"id": "background", "tools": tools})
+        instructions.append(("background", fields["background_text"]))
     if fields["impact"]:
-        blocks_text.append(f"- `impact`: {fields['impact_text']}")
-        blocks.append({"id": "impact", "type": "section", "tools": [], "optional": True})
+        blocks.append({"id": "impact", "optional": True})
+        instructions.append(("impact", fields["impact_text"]))
     if fields["community"]:
-        blocks_text.append(f"- `community_discussion`: {fields['community_text']}")
-        blocks.append({"id": "community_discussion", "type": "section", "tools": [], "optional": True})
-    enrichment = ["# Role", fields["editor_role"], "# Blocks", "\n".join(blocks_text),
-                  "# Profile writing rules", fields["writing_rules"]]
+        blocks.append({"id": "community_discussion", "optional": True})
+        instructions.append(("community_discussion", fields["community_text"]))
+    block_lines = "\n".join(f"- `{block_id}`: {text}" for block_id, text in instructions if text)
+    enrichment = _join([fields["editor_role"], block_lines, fields["writing_rules"]])
 
-    definition = {
+    definition: dict[str, Any] = {
         "id": profile_id,
-        "name": fields["profile_name"],
+        "name": fields["profile_name"] or fallback_name,
         "match": "match.md",
         "analysis": "analysis.md",
-        "content": {"analysis_max_chars": fields["analysis_max_chars"], "enrichment_max_chars": 8000,
-                    "sampling": "prefix"},
         "enrichment": {"prompt": "enrichment.md", "blocks": blocks},
     }
+    if fields["analysis_max_chars"] is not None:
+        definition["content"] = {"analysis_max_chars": fields["analysis_max_chars"]}
     return {
         "profile.json": json.dumps(definition, ensure_ascii=False, indent=2) + "\n",
-        "match.md": "\n\n".join(match) + "\n",
-        "analysis.md": "\n\n".join(analysis) + "\n",
-        "enrichment.md": "\n\n".join(enrichment) + "\n",
+        "analysis.md": analysis,
+        "enrichment.md": enrichment,
     }
+
+
+def fingerprint(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def changed_by_hand(profile_dir: Path, written: dict[str, str] | None, names=FORM_FILES) -> list[str]:
+    """Files that exist and differ from what the form last wrote (all of them if it never wrote)."""
+    written = written or {}
+    return [
+        name for name in names
+        if (profile_dir / name).is_file()
+        and written.get(name) != fingerprint((profile_dir / name).read_text(encoding="utf-8"))
+    ]
 
 
 def _check_with_horizon(profiles_root: Path, profile_id: str) -> None:
@@ -152,7 +137,13 @@ def _check_with_horizon(profiles_root: Path, profile_id: str) -> None:
 
 
 def write_files(profile_dir: Path, profile_id: str, files: dict[str, str]) -> None:
-    """Check the files with Horizon's own loader in a scratch folder, then put them in place."""
+    """Check the files with Horizon's own loader in a scratch folder, then put them in place.
+
+    match.md is created empty when it does not exist yet, because Horizon requires it.
+    """
+    files = dict(files)
+    if not (profile_dir / "match.md").is_file() and "match.md" not in files:
+        files["match.md"] = ""
     with tempfile.TemporaryDirectory(prefix="masthead-profile-") as scratch:
         trial = Path(scratch) / profile_id
         if profile_dir.is_dir():
