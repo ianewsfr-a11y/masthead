@@ -80,6 +80,7 @@
     }
     const suggest = Sources.suggestions(M, {
       ask: (interests) => M.api.post('/api/setup/suggest', { ai: aiValues(), interests, existing: check.selected() }),
+      presets: (interests) => M.api.post('/api/setup/presets', { interests }),
       keyOk: () => {
         const provider = chosenProvider();
         return Boolean(provider && ai.values().model && languageList().length && (!provider.needs_key || provider.key_present));
@@ -117,7 +118,7 @@
         ...ai.nodes,
         field(M, 'nd-languages', 'Output languages', languages, 'Codes separated by commas, such as en, fr. Each kept story is written once per language. Horizon’s setup proposes zh, en.'),
         keyHolder),
-      section(3, 'What should this domain follow?', 'Horizon asks your model for sources (one call; the tokens are shown). Optional.',
+      section(3, 'What should this domain follow?', 'Horizon finds sources from its preset library (free) or asks your model (one call; the tokens are shown). Optional.',
         suggest.node),
       section(4, 'Sources', 'Tick the sources Horizon should read. Each is tested with Horizon’s collector first; a source that fails cannot be ticked.',
         Sources.pasteBox(M, { parse: '/api/setup/parse' }, check.check),

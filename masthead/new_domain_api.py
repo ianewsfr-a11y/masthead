@@ -44,6 +44,15 @@ def install(app: FastAPI, manager: RunManager) -> None:
     async def setup_test(body: dict[str, Any]) -> dict[str, Any]:
         return await horizon_setup.test(_item(body))
 
+    @app.post("/api/setup/presets")
+    async def setup_presets(body: dict[str, Any]) -> dict[str, Any]:
+        return horizon_setup.preset_matches(body.get("interests"))
+
+    @app.post("/api/domains/{domain_id}/source-presets")
+    async def source_presets(domain_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        get_domain(domain_id)
+        return horizon_setup.preset_matches(body.get("interests"))
+
     @app.post("/api/setup/suggest")
     async def setup_suggest(body: dict[str, Any]):
         busy = not_running()  # the shared keys must not meet a domain's run

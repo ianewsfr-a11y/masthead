@@ -120,12 +120,32 @@
       M.h('div', {}, button), message.area);
   }
 
-  /* Horizon's source recommendation (src/setup/ai_recommend.py). ask(interests) does the call;
-     keyOk() says whether the model can be called. */
-  function suggestions(M, { ask, keyOk, keyHint, interests: start }, check) {
+  /* Two ways Horizon's setup finds sources: its preset library, matched on the words typed
+     (src/setup/presets.py, no model call, read from the copy shipped with MastHead), and its
+     recommendation by the model (src/setup/ai_recommend.py). presets(interests) and ask(interests)
+     do the calls; keyOk() says whether the model can be called. */
+  function suggestions(M, { ask, presets, keyOk, keyHint, interests: start }, check) {
     const interests = M.h('textarea', { id: 'src-interests', rows: 2 }, start || '');
     const message = window.MastHeadKit.messageArea(M);
     const button = M.h('button', { type: 'button', class: 'btn' }, 'Ask Horizon');
+    const presetButton = M.h('button', { type: 'button', class: 'btn' }, 'Search Horizon’s presets');
+    const toCheck = (list) => list.map((s) => ({ line: describe(s.config), kind: s.type, fields: s.config,
+      description: s.description, reason: s.reason, error: null }));
+    presetButton.addEventListener('click', async () => {
+      if (!interests.value.trim()) { message.error('Nothing to search', 'Describe what the domain follows, in a few words.'); interests.focus(); return; }
+      presetButton.disabled = true;
+      message.clear();
+      try {
+        const answer = await presets(interests.value);
+        if (!answer.suggestions.length) {
+          message.error('No preset matches these words', `Horizon’s presets cover: ${answer.themes.join(', ')}. Paste your own sources, or ask Horizon.`);
+        } else {
+          message.info(`${M.plural(answer.suggestions.length, 'preset source', 'preset sources')}`, 'Found in Horizon’s preset library, with no model call. They are tested in the list.');
+          await check(toCheck(answer.suggestions));
+        }
+      } catch (error) { message.error('No preset', error.message); }
+      presetButton.disabled = false;
+    });
     // Examples from Horizon's own setup (get_interests), plus one outside technology.
     const examples = M.h('span', { class: 'help', id: 'src-interests-examples' },
       'A few words or a sentence, in any language. For example: “LLM inference”, “Rust systems programming”, '
@@ -160,7 +180,9 @@
       gate,
       node: M.h('div', { class: 'stack' },
         M.h('div', { class: 'field' }, M.h('label', { for: 'src-interests' }, 'What should this domain follow?'), interests, examples, help),
-        M.h('div', {}, button), message.area),
+        M.h('div', { class: 'row-actions' }, presetButton, button),
+        M.h('p', { class: 'hint' }, 'Search Horizon’s presets: its own list of sources, matched on your words, no model call, free. Ask Horizon: your model suggests sources.'),
+        message.area),
     };
   }
 
@@ -214,6 +236,7 @@
     let latest = overview;
     const suggest = suggestions(M, {
       ask: (interests) => M.api.post(`${base}/source-suggest`, { interests }),
+      presets: (interests) => M.api.post(`${base}/source-presets`, { interests }),
       keyOk: () => latest.settings.ai.api_key_present,
       keyHint: () => 'This uses the model: enter the key in step Subject and AI first.',
       interests: overview.description || overview.name,
@@ -225,7 +248,7 @@
           M.h('h3', { id: 'src-add-title' }, 'Add sources'),
           pasteBox(M, api, check.check),
           check.list, M.h('div', {}, check.addButton), check.message.area,
-          M.h('details', { class: 'fold' }, M.h('summary', {}, 'Ask Horizon for suggestions'), suggest.node)),
+          M.h('details', { class: 'fold' }, M.h('summary', {}, 'Find sources with Horizon (presets or your model)'), suggest.node)),
         M.h('section', { class: 'sub', 'aria-labelledby': 'src-list-title' },
           M.h('h3', { id: 'src-list-title' }, 'Sources Horizon will read'),
           M.h('p', { class: 'hint' }, 'Every source Horizon will read is listed, including Hacker News, Reddit and Telegram when Horizon reads them.'),

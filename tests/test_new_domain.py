@@ -314,3 +314,35 @@ def test_discard_deletes_only_a_draft(client, draft):
     assert client.post("/api/domains/flight-sim/discard", json={}).status_code == 409
     assert client.post("/api/domains/boating/discard", json={}).status_code == 200
     assert not draft.path.exists()
+
+
+# -- Horizon's presets ---------------------------------------------------------------
+
+
+def test_presets_come_from_horizons_library_without_any_network_call(client, draft, monkeypatch):
+    from src.setup.presets import load_presets, match_sources
+
+    from masthead.horizon_setup import PRESETS_FILE
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("the online preset library must never be called")
+
+    monkeypatch.setattr("src.setup.presets.fetch_presets", no_network)
+    answer = client.post("/api/setup/presets", json={"interests": "web security"}).json()
+    expected = match_sources("web security", load_presets(str(PRESETS_FILE), prefer_api=False))
+    assert [s["config"] for s in answer["suggestions"]] == [
+        {k: v for k, v in source["config"].items() if k in ("name", "url", "subreddit", "owner", "repo", "username",
+                                                            "channel", "category", "sort", "fetch_limit", "min_score")}
+        for source, _ in expected
+    ]
+    assert answer["suggestions"] and all(s["origin"] == "preset" for s in answer["suggestions"])
+    assert "Security / Privacy" in answer["themes"]
+
+    none = client.post("/api/domains/boating/source-presets", json={"interests": "flight simulator"}).json()
+    assert none["suggestions"] == [] and len(none["themes"]) == 8
+    assert client.post("/api/setup/presets", json={"interests": " "}).status_code == 400
+
+
+def test_a_preset_source_is_built_by_horizon_like_any_other(client, draft):
+    preset = client.post("/api/setup/presets", json={"interests": "rust"}).json()["suggestions"][0]
+    assert client.post("/api/domains/boating/source-add", json={"type": preset["type"], "config": preset["config"]}).status_code == 200
