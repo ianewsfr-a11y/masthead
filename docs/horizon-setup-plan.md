@@ -4,7 +4,7 @@ Status: **approved on 16 November 2026 and built** on the branch `feat/horizon-s
 
 Date: 16 November 2026.
 
-Asked by the owner: start again from Horizon's initial configuration, for a clean approach. His three domains (virtual-flight, business-school, flight-sim) were taken out of MastHead the same day. They were moved, not deleted, to `C:\Users\barat\masthead-backup-2026-11-16\`.
+Asked by the owner: start again from Horizon's initial configuration, for a clean approach. His three domains (virtual-flight, business-school, flight-sim) were taken out of MastHead the same day. They were moved, not deleted, to a backup folder outside MastHead.
 
 All Horizon references are to the pinned commit `3239500`.
 
