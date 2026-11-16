@@ -277,8 +277,6 @@ def ai_choice(ai: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
         if parts.scheme not in ("http", "https") or not parts.netloc:
             raise DomainError("The address must start with http:// or https://.")
         result["base_url"] = base_url.strip()
-    elif provider_id == "ollama":
-        result["base_url"] = info["base_url"]
     else:
         result.pop("base_url", None)  # Horizon then uses its own address for the provider
 

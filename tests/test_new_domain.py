@@ -1,5 +1,7 @@
-"""New domain: draft, sources tested with Horizon's collector, Horizon's suggestions,
-editorial rules written to Horizon's profile files, then create or discard.
+"""New domain through Horizon's own setup: the configuration is what Horizon's wizard
+writes (build_config, save_config), sources are tested with Horizon's collector and
+added as Horizon builds them, suggestions come from Horizon, and the editorial rules
+are Horizon's built-in profiles until the user customizes them.
 
 No model call: the suggestion function is replaced. Source tests read a feed
 served on this computer.
@@ -18,12 +20,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from masthead.domains import get_domain
+from src.models import AI_PROVIDER_DEFAULTS, AIConfig, AIProvider
+from src.setup.wizard import build_config
 from support import create_from_template
 from masthead.server import create_app
 
 HEADERS = {"host": "127.0.0.1:8765"}
-STEP1 = {"id": "boating", "name": "Boating", "description": "Sailing and motor boats.",
-         "languages": ["en", "fr"], "copy_from": "flight-sim"}
+SETUP = {"id": "boating", "name": "Boating", "description": "Sailing and motor boats.",
+         "provider": "anthropic", "model": "claude-test", "languages": ["en", "fr"],
+         "sources": [{"type": "rss", "config": {"name": "FSElite", "url": "https://fselite.net/feed/"}}]}
 
 
 def _rss(hours_ago: list[int]) -> bytes:
@@ -68,8 +73,6 @@ def feeds():
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("MASTHEAD_HOME", str(tmp_path))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    starter = create_from_template("flight-sim")
-    (starter.path / ".env").write_text("ANTHROPIC_API_KEY=not-a-real-key\n", encoding="utf-8")
     return tmp_path
 
 
@@ -83,109 +86,111 @@ def client(home):
 
 @pytest.fixture()
 def draft(client):
-    response = client.post("/api/new-domain", json=STEP1)
+    response = client.post("/api/new-domain", json=SETUP)
     assert response.status_code == 201, response.text
     return get_domain("boating")
 
 
-# -- step 1: subject -----------------------------------------------------------
+def horizon_setup_of(answers: dict, items: list) -> dict:
+    """What Horizon's own wizard writes for these answers: configure_ai's AIConfig, build_config, save_config."""
+    ai = AIConfig(provider=AIProvider(answers["provider"]), model=answers["model"],
+                  api_key_env=AI_PROVIDER_DEFAULTS[AIProvider(answers["provider"])]["api_key_env"],
+                  temperature=0.3, max_tokens=8192, languages=answers["languages"])
+    return build_config(ai, items).model_dump(mode="json")
 
 
-OFF = {"hackernews": {"enabled": False}, "reddit": {"enabled": False}, "telegram": {"enabled": False}}
+# -- creating a domain: Horizon's setup ---------------------------------------------
 
 
-def test_a_draft_is_a_valid_horizon_domain_with_nothing_read_by_default(client, draft):
+def test_the_configuration_is_the_one_horizons_setup_writes(client, draft):
     meta = json.loads(draft.meta_path.read_text(encoding="utf-8"))
-    assert meta["draft"] is True and meta["name"] == "Boating"
-    raw = draft.raw_config()
-    starter = get_domain("flight-sim").raw_config()
-    # Only what the user chose: the copied AI with their languages, the profile id, and the three
-    # sources Horizon reads by default switched off. No threshold, no maximum, no default values.
-    assert raw == {"ai": {**starter["ai"], "languages": ["en", "fr"]},
-                   "processing": {"default_profile": "boating"}, "sources": OFF}
-    assert not (draft.path / ".env").exists()  # the key is never copied
-    assert not (draft.path / "profiles").exists()  # nothing written before the rules are saved
+    assert meta == {"name": "Boating", "description": "Sailing and motor boats.", "draft": True}
+    written = json.loads(draft.config_path.read_text(encoding="utf-8"))
+    assert written == horizon_setup_of(SETUP, SETUP["sources"])
+    assert written["sources"]["rss"][0]["profile"] is None  # Horizon's model chooses the profile
+    assert written["sources"]["hackernews"]["enabled"] is False  # a source was chosen
+    assert not (draft.path / "profiles").exists()  # Horizon's built-in profiles
 
     overview = client.get("/api/domains/boating").json()
-    assert overview["draft"] is True and overview["rules_missing"] is True
-    assert overview["sources"] and all(not row["enabled"] for row in overview["sources"])
-    assert {row["kind"] for row in overview["sources"]} == {"hackernews", "reddit", "telegram"}  # shown, off
-    assert not any(row["implicit"] for row in overview["sources"])
+    assert overview["draft"] is True and overview["rules_missing"] is False
     assert overview["missing_env"] == ["ANTHROPIC_API_KEY"]
-    assert overview["settings"]["profiles"] == []
+    assert {p["id"] for p in overview["settings"]["profiles"]} == {"tech-news", "tech-blog", "finance-news", "ai-creator"}
 
 
-def test_a_draft_without_a_copy_holds_only_what_was_typed(client):
-    response = client.post("/api/new-domain", json={"id": "plain", "name": "Plain", "languages": ["en"],
-                                                    "provider": "anthropic", "model": "claude-test"})
-    assert response.status_code == 201, response.text
-    assert get_domain("plain").raw_config() == {
-        "ai": {"provider": "anthropic", "model": "claude-test", "api_key_env": "ANTHROPIC_API_KEY"},
-        "processing": {"default_profile": "plain"},
-        "sources": OFF,
-    }
-    assert client.post("/api/new-domain", json={"id": "noai", "name": "No AI", "languages": ["en"]}).status_code == 400
+def test_without_any_source_horizon_switches_hacker_news_on(client):
+    answers = {**SETUP, "id": "plain", "sources": []}
+    assert client.post("/api/new-domain", json=answers).status_code == 201
+    written = json.loads(get_domain("plain").config_path.read_text(encoding="utf-8"))
+    assert written == horizon_setup_of(answers, [])
+    assert written["sources"]["hackernews"]["enabled"] is True  # Horizon's own fallback
+
+
+def test_nothing_is_pre_filled_so_every_answer_is_needed(client):
+    for missing in ("provider", "model", "languages"):
+        body = {**SETUP, "id": f"no-{missing}", missing: "" if missing != "languages" else []}
+        response = client.post("/api/new-domain", json=body)
+        assert response.status_code == 400, missing
+    assert client.post("/api/new-domain", json={**SETUP, "id": "chat", "provider": "openai-chatgpt"}).status_code == 400
 
 
 def test_a_draft_id_must_be_new_and_well_formed(client, draft):
-    assert client.post("/api/new-domain", json=STEP1).status_code == 400
-    assert client.post("/api/new-domain", json={**STEP1, "id": "Bad Id"}).status_code == 400
-    assert client.post("/api/new-domain", json={**STEP1, "id": "x2", "languages": []}).status_code == 400
-    assert client.post("/api/new-domain", json={**STEP1, "id": "x3", "copy_from": "nope"}).status_code == 404
+    assert client.post("/api/new-domain", json=SETUP).status_code == 400
+    assert client.post("/api/new-domain", json={**SETUP, "id": "Bad Id"}).status_code == 400
+    assert client.post("/api/new-domain", json={**SETUP, "id": "x2", "sources": [{"type": "website"}]}).status_code == 400
 
 
 def test_drafts_are_listed_as_drafts(client, draft):
     listing = {d["id"]: d for d in client.get("/api/domains").json()["domains"]}
-    assert listing["boating"]["draft"] is True and listing["flight-sim"]["draft"] is False
+    assert listing["boating"]["draft"] is True
 
 
-# -- step 2: sources -------------------------------------------------------------
+# -- sources --------------------------------------------------------------------------
 
 
 def test_a_source_is_tested_with_horizons_collector_and_nothing_is_kept(client, draft, feeds):
     before = draft.config_path.read_bytes()
     runs_before = list(draft.runs_root.glob("*")) if draft.runs_root.exists() else []
 
-    fresh = client.post("/api/domains/boating/source-test",
-                        json={"kind": "rss", "name": "Fresh", "url": f"{feeds}/fresh.xml"}).json()
+    fresh = client.post("/api/setup/test", json={"type": "rss", "config": {"name": "Fresh", "url": f"{feeds}/fresh.xml"}}).json()
     assert fresh["status"] == "ok" and fresh["items"] == 2  # the 200-hour-old story is outside 7 days
     assert fresh["latest"] and fresh["titles"][0].startswith("Story")
-
     stale = client.post("/api/domains/boating/source-test",
-                        json={"kind": "rss", "name": "Stale", "url": f"{feeds}/stale.xml"}).json()
+                        json={"type": "rss", "config": {"name": "Stale", "url": f"{feeds}/stale.xml"}}).json()
     assert stale["status"] == "empty" and stale["items"] == 0
-
-    broken = client.post("/api/domains/boating/source-test",
-                         json={"kind": "rss", "name": "Broken", "url": f"{feeds}/missing.xml"}).json()
+    broken = client.post("/api/setup/test", json={"type": "rss", "config": {"name": "Broken", "url": f"{feeds}/missing.xml"}}).json()
     assert broken["status"] == "failed" and "500" in broken["error"]
 
     assert draft.config_path.read_bytes() == before
     assert (list(draft.runs_root.glob("*")) if draft.runs_root.exists() else []) == runs_before
 
 
-def test_sources_of_each_kind_are_added_to_the_config(client, draft):
-    for body in (
-        {"kind": "rss", "name": "Sail News", "url": "https://example.org/feed"},
-        {"kind": "github_repo", "owner": "example", "repo": "boat-tools"},
-        {"kind": "reddit_subreddit", "subreddit": "sailing"},
-        {"kind": "telegram", "channel": "boatnews"},
-    ):
-        response = client.post("/api/domains/boating/source-add", json=body)
-        assert response.status_code == 200, response.text
-    raw = draft.raw_config()["sources"]
-    # What identifies each source and the domain's profile; Horizon's defaults for everything else.
-    assert raw["rss"] == [{"name": "Sail News", "url": "https://example.org/feed", "profile": "boating"}]
-    assert raw["github"] == [{"type": "repo_releases", "owner": "example", "repo": "boat-tools", "profile": "boating"}]
-    assert raw["reddit"] == {"enabled": True, "subreddits": [{"subreddit": "sailing", "profile": "boating"}]}
-    assert raw["telegram"] == {"enabled": True, "channels": [{"channel": "boatnews", "profile": "boating"}]}
-    assert raw["hackernews"]["enabled"] is False
+def test_a_source_added_later_gets_the_entry_horizon_builds(client, draft, monkeypatch):
+    monkeypatch.setenv("SAIL_FEED", "https://example.org/sail.xml")
+    raw = draft.raw_config()
+    raw["sources"]["rss"][0]["url"] = "${SAIL_FEED}"  # a placeholder written by hand must survive
+    draft.config_path.write_text(json.dumps(raw), encoding="utf-8")
 
-    again = client.post("/api/domains/boating/source-add",
-                        json={"kind": "rss", "name": "Again", "url": "https://example.org/feed"})
+    added = [
+        {"type": "rss", "config": {"name": "Sail News", "url": "https://example.org/feed"}},
+        {"type": "github_repo", "config": {"owner": "example", "repo": "boat-tools"}},
+        {"type": "reddit_subreddit", "config": {"subreddit": "sailing"}},
+        {"type": "telegram", "config": {"channel": "boatnews"}},
+    ]
+    for item in added:
+        response = client.post("/api/domains/boating/source-add", json=item)
+        assert response.status_code == 200, response.text
+    sources = draft.raw_config()["sources"]
+    expected = horizon_setup_of(SETUP, added)["sources"]
+    assert sources["rss"][0]["url"] == "${SAIL_FEED}"
+    assert sources["rss"][1] == expected["rss"][0]
+    assert sources["github"][0] == expected["github"][0]
+    assert sources["reddit"]["subreddits"] == expected["reddit"]["subreddits"] and sources["reddit"]["enabled"] is True
+    assert sources["telegram"]["channels"] == expected["telegram"]["channels"] and sources["telegram"]["enabled"] is True
+
+    again = client.post("/api/domains/boating/source-add", json={"type": "rss", "config": {"name": "Again", "url": "https://example.org/feed"}})
     assert again.status_code == 400
-    bad = client.post("/api/domains/boating/source-add", json={"kind": "rss", "name": "x", "url": "not a url"})
+    bad = client.post("/api/domains/boating/source-add", json={"type": "rss", "config": {"name": "x", "url": "not a url"}})
     assert bad.status_code == 400
-    assert client.post("/api/domains/boating/source-add", json={"kind": "website", "url": "https://x"}).status_code == 400
 
 
 def test_suggestions_come_from_horizons_function_with_measured_tokens(client, draft, monkeypatch):
@@ -203,110 +208,109 @@ def test_suggestions_come_from_horizons_function_with_measured_tokens(client, dr
         return [
             {"type": "rss", "description": "A sailing magazine", "reason": "Covers races",
              "config": {"name": "Sail Mag", "url": "https://example.org/sail.xml", "category": "press"}},
-            {"type": "reddit_subreddit", "description": "Sailing forum", "config": {"subreddit": "sailing"}},
+            {"type": "reddit_user", "config": {"username": "sailor"}},
             {"type": "something_else", "config": {}},
         ]
 
     monkeypatch.setattr("masthead.new_domain.get_ai_recommendations", fake_recommendations)
-    client.post("/api/domains/boating/source-add", json={"kind": "rss", "name": "Have", "url": "https://example.org/have"})
     result = client.post("/api/domains/boating/source-suggest", json={"interests": "sailing races"}).json()
 
-    assert [s["kind"] for s in result["suggestions"]] == ["rss", "reddit_subreddit"]
-    assert result["suggestions"][0]["fields"] == {"name": "Sail Mag", "url": "https://example.org/sail.xml"}
+    assert [s["type"] for s in result["suggestions"]] == ["rss", "reddit_user"]
+    assert result["suggestions"][0]["config"] == {"name": "Sail Mag", "url": "https://example.org/sail.xml", "category": "press"}
     assert result["suggestions"][0]["reason"] == "Covers races"
     assert result["input_tokens"] == 321 and result["output_tokens"] == 123
     assert seen["interests"] == "sailing races" and seen["key"] == "not-a-real-key"
-    assert any("example.org/have" in (s.get("description") or "") for s in seen["existing"])
+    assert any("FSElite" in (s.get("description") or "") for s in seen["existing"])
     import os
 
     assert "ANTHROPIC_API_KEY" not in os.environ  # removed once the call is over
 
 
-def test_suggestions_need_the_drafts_own_key(client, draft):
+def test_setup_suggestions_use_the_shared_key_before_the_domain_exists(client, monkeypatch):
+    seen = {}
+
+    async def fake_recommendations(ai_config, interests, existing_sources):
+        import os
+
+        seen.update(key=os.environ.get("ANTHROPIC_API_KEY"), provider=ai_config.provider.value)
+        return [{"type": "telegram", "config": {"channel": "@boats"}}]
+
+    monkeypatch.setattr("masthead.new_domain.get_ai_recommendations", fake_recommendations)
+    ai = {key: SETUP[key] for key in ("provider", "model", "languages")}
+    refused = client.post("/api/setup/suggest", json={"ai": ai, "interests": "boats"})
+    assert refused.status_code == 400 and "ANTHROPIC_API_KEY" in refused.json()["error"]
+
+    assert client.post("/api/ai/keys", json={"name": "ANTHROPIC_API_KEY", "value": "sk-ant-not-real-0000"}).status_code == 200
+    result = client.post("/api/setup/suggest", json={"ai": ai, "interests": "boats"}).json()
+    assert result["suggestions"] == [{"type": "telegram", "config": {"channel": "boats"}, "description": None, "reason": None}]
+    assert seen == {"key": "sk-ant-not-real-0000", "provider": "anthropic"}
+    import os
+
+    assert "ANTHROPIC_API_KEY" not in os.environ
+
+
+def test_suggestions_need_a_key(client, draft):
     response = client.post("/api/domains/boating/source-suggest", json={"interests": "sailing"})
     assert response.status_code == 400 and "ANTHROPIC_API_KEY" in response.json()["error"]
 
 
-# -- step 3: editorial rules ------------------------------------------------------
+# -- editorial rules: Horizon's profiles ----------------------------------------------
 
 
-RULES = {"goal": "Score news for sailors.", "summary": "Lead with what changed.",
-         "tiers": ["Major news.", "", "", "", "Noise."]}
+def test_a_new_domain_uses_horizons_built_in_profiles_read_only(client, draft):
+    state = client.get("/api/domains/boating/profiles").json()
+    assert state["builtin"] is True
+    assert {p["id"] for p in state["profiles"]} == {"tech-news", "tech-blog", "finance-news", "ai-creator"}
+    assert all(set(p["files"]) == {"match.md", "analysis.md", "enrichment.md"} for p in state["profiles"])
+    refused = client.post("/api/domains/boating/profile-file",
+                          json={"profile": "tech-news", "file": "match.md", "text": "x"})
+    assert refused.status_code == 400 and not (draft.path / "profiles").exists()
 
 
-def test_the_form_starts_empty_and_writes_only_what_was_typed(client, draft):
-    from src.processing.profiles import ProfileRegistry
+def test_customized_profiles_are_copies_edited_as_text_and_checked_by_horizon(client, draft):
+    from src.processing.profiles import BUILTIN_PROFILES_DIR
 
-    form = client.get("/api/domains/boating/profile-form").json()
-    assert form["exists"] is False and form["files"] == {}
-    assert all(value in ("", False, None) for key, value in form["fields"].items() if key != "tiers")
-    assert form["fields"]["tiers"] == [""] * 5
-    assert not {"belongs", "typical", "excluded"} & set(form["fields"])  # match.md is not in the form
+    state = client.post("/api/domains/boating/profiles/customize", json={}).json()
+    assert state["builtin"] is False
+    copied = draft.path / "profiles" / "tech-news" / "match.md"
+    assert copied.read_text(encoding="utf-8") == (BUILTIN_PROFILES_DIR / "tech-news" / "match.md").read_text(encoding="utf-8")
+    assert client.post("/api/domains/boating/profiles/customize", json={}).status_code == 409  # never over existing files
 
-    saved = client.post("/api/domains/boating/profile-form", json={"fields": RULES})
-    assert saved.status_code == 200, saved.text
-    files = saved.json()["files"]
-    assert files["analysis.md"] == "Score news for sailors.\n\n- 9-10: Major news.\n- 0-2: Noise.\n"
-    assert files["enrichment.md"] == "- `summary`: Lead with what changed.\n"
-    assert files["match.md"] == ""  # Horizon requires the file; it can stay empty
-    definition = json.loads(files["profile.json"])
-    assert definition == {"id": "boating", "name": "Boating", "match": "match.md", "analysis": "analysis.md",
-                          "enrichment": {"prompt": "enrichment.md", "blocks": [{"id": "summary", "primary": True}]}}
-    loaded = ProfileRegistry.load(draft.path / "profiles", "boating").get("boating")
-    assert loaded.definition.content.analysis_max_chars == 1000  # Horizon's own default, not written
-
-    more = {**RULES, "analysis_max_chars": 6000, "background": True, "web_search": False, "profile_name": "Sailing"}
-    files = client.post("/api/domains/boating/profile-form", json={"fields": more}).json()["files"]
-    definition = json.loads(files["profile.json"])
-    assert definition["content"] == {"analysis_max_chars": 6000} and definition["name"] == "Sailing"
-    assert {"id": "background", "tools": ["history_search"]} in definition["enrichment"]["blocks"]
-    assert "Use three to five" not in files["analysis.md"] and "web_search" not in files["enrichment.md"]
-
-
-def test_the_profile_text_can_be_edited_directly(client, draft):
-    text = "# Boating profile\n\nOnly sailing news.\n"
-    before = client.post("/api/domains/boating/profile-file", json={"file": "match.md", "text": text})
-    assert before.status_code == 400  # Horizon needs profile.json first: save the form once
-    client.post("/api/domains/boating/profile-form", json={"fields": RULES})
-    assert client.post("/api/domains/boating/profile-file", json={"file": "match.md", "text": text}).status_code == 200
-    assert (draft.path / "profiles" / "boating" / "match.md").read_text(encoding="utf-8") == text
+    saved = client.post("/api/domains/boating/profile-file",
+                        json={"profile": "tech-news", "file": "match.md", "text": "Boating news only.\n"})
+    assert saved.status_code == 200 and copied.read_text(encoding="utf-8") == "Boating news only.\n"
     assert client.post("/api/domains/boating/profile-file",
-                       json={"file": "../domain.json", "text": "x"}).status_code == 400
-    assert client.post("/api/domains/boating/profile-file", json={"file": "match.md", "text": ""}).status_code == 200
+                       json={"profile": "../escape", "file": "match.md", "text": "x"}).status_code == 400
+    assert client.post("/api/domains/boating/profile-file",
+                       json={"profile": "tech-news", "file": "profile.json", "text": "{}"}).status_code == 400
 
 
-def test_invalid_form_values_are_refused(client, draft):
-    assert client.post("/api/domains/boating/profile-form",
-                       json={"fields": {**RULES, "analysis_max_chars": 100}}).status_code == 400
-    assert client.post("/api/domains/boating/profile-form",
-                       json={"fields": {**RULES, "tiers": ["one"]}}).status_code == 400
-    assert client.post("/api/domains/boating/profile-form",
-                       json={"fields": {**RULES, "background": "yes"}}).status_code == 400
-
-
-# -- step 4: trial run, then create or discard -------------------------------------
+# -- trial run, then create or discard -----------------------------------------------
 
 
 def test_a_trial_stops_before_writing(client, draft, feeds):
-    client.post("/api/domains/boating/source-add", json={"kind": "rss", "name": "Fresh", "url": f"{feeds}/fresh.xml"})
-    early = client.post("/api/domains/boating/runs", json={"until": "collect"})
-    assert early.status_code == 409 and "editorial rules" in early.json()["error"]
-    client.post("/api/domains/boating/profile-form", json={"fields": RULES})
+    raw = draft.raw_config()
+    raw["sources"]["rss"][0]["url"] = f"{feeds}/fresh.xml"
+    draft.write_raw_config(raw)
     job = client.post("/api/domains/boating/runs", json={"until": "select"})
-    assert job.status_code == 202
+    assert job.status_code == 202, job.text
     assert [s["status"] for s in job.json()["stages"]][3:] == ["skipped", "skipped"]  # write, briefing
 
 
-def test_create_needs_a_source_then_clears_the_draft_flag(client, draft, feeds):
+def test_create_needs_a_source_on_then_clears_the_draft_flag(client, draft):
+    raw = draft.raw_config()
+    raw["sources"]["rss"][0]["enabled"] = False
+    draft.write_raw_config(raw)
     assert client.post("/api/domains/boating/publish", json={}).status_code == 400
-    client.post("/api/domains/boating/source-add", json={"kind": "rss", "name": "Fresh", "url": f"{feeds}/fresh.xml"})
+    raw["sources"]["rss"][0]["enabled"] = True
+    draft.write_raw_config(raw)
     assert client.post("/api/domains/boating/publish", json={}).status_code == 200
     assert client.get("/api/domains/boating").json()["draft"] is False
     assert client.post("/api/domains/boating/discard", json={}).status_code == 409  # no longer a draft
 
 
 def test_discard_deletes_only_a_draft(client, draft):
+    create_from_template("flight-sim")
     assert client.post("/api/domains/flight-sim/discard", json={}).status_code == 409
     assert client.post("/api/domains/boating/discard", json={}).status_code == 200
     assert not draft.path.exists()
-    assert client.get("/api/domains/boating").status_code == 404

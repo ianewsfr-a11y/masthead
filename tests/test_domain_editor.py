@@ -109,43 +109,16 @@ def imported(home, tmp_path):
     return import_domain("imported", "Imported", source / "config.json", source / "profiles")
 
 
-def test_hand_written_rules_are_shown_as_files_and_never_overwritten_by_the_form(client, imported):
-    state = client.get("/api/domains/imported/profile-form").json()
-    assert state["managed"] is False and "Hand-written rules." in state["files"]["match.md"]
-    analysis = imported.path / "profiles" / "flightsim-news" / "analysis.md"
-    before = analysis.read_text(encoding="utf-8")
-
-    refused = client.post("/api/domains/imported/profile-form", json={"fields": state["fields"]})
-    assert refused.status_code == 409 and "analysis.md" in refused.json()["files"]
-    assert analysis.read_text(encoding="utf-8") == before
-
-    replaced = client.post("/api/domains/imported/profile-form", json={"fields": state["fields"], "replace": True})
-    assert replaced.status_code == 200 and replaced.json()["managed"] is True
+def test_an_imported_domain_keeps_its_own_profiles_editable_as_text(client, imported):
+    state = client.get("/api/domains/imported/profiles").json()
+    assert state["builtin"] is False and [p["id"] for p in state["profiles"]] == ["flightsim-news"]
+    assert state["profiles"][0]["files"]["match.md"] == "Hand-written rules.\n"
+    saved = client.post("/api/domains/imported/profile-file",
+                        json={"profile": "flightsim-news", "file": "match.md", "text": "Edited by hand.\n"})
+    assert saved.status_code == 200
     match = imported.path / "profiles" / "flightsim-news" / "match.md"
-    assert match.read_text(encoding="utf-8") == "Hand-written rules.\n"  # the form never writes match.md
-
-
-def test_a_file_edited_by_hand_is_never_replaced_by_the_form_without_confirmation(client):
-    """Point 2: also in a domain whose rules were written with the form."""
-    client.post("/api/new-domain", json={"id": "boating", "name": "Boating", "languages": ["en"],
-                                         "provider": "anthropic", "model": "claude-test"})
-    fields = {"goal": "Score boating news."}
-    first = client.post("/api/domains/boating/profile-form", json={"fields": fields})
-    assert first.status_code == 200 and first.json()["managed"] is True
-    edited = client.post("/api/domains/boating/profile-file", json={"file": "analysis.md", "text": "My own words.\n"})
-    assert edited.json()["changed_by_hand"] == ["analysis.md"] and edited.json()["managed"] is False
-
-    refused = client.post("/api/domains/boating/profile-form", json={"fields": {"goal": "Something else."}})
-    assert refused.status_code == 409 and refused.json()["files"] == ["analysis.md"]
-    analysis = get_domain("boating").path / "profiles" / "boating" / "analysis.md"
-    assert analysis.read_text(encoding="utf-8") == "My own words.\n"
-
-    # A file changed outside MastHead altogether counts too.
-    enrichment = analysis.with_name("enrichment.md")
-    client.post("/api/domains/boating/profile-form", json={"fields": fields, "replace": True})
-    enrichment.write_text("Typed in a text editor.\n", encoding="utf-8")
-    again = client.post("/api/domains/boating/profile-form", json={"fields": fields})
-    assert again.status_code == 409 and again.json()["files"] == ["enrichment.md"]
+    assert match.read_text(encoding="utf-8") == "Edited by hand.\n"
+    assert client.post("/api/domains/imported/profiles/customize", json={}).status_code == 409
 
 
 # -- settings ------------------------------------------------------------------------
@@ -178,7 +151,7 @@ def test_saving_settings_writes_no_value_horizon_already_uses(client):
                                          "provider": "anthropic", "model": "claude-test"})
     before = get_domain("boating").raw_config()
     response = client.post("/api/domains/boating/settings",
-                           json={"time_window_hours": 24, "threshold": None, "max_items": None})
+                           json={"time_window_hours": 24, "threshold": 7.0, "max_items": None})  # Horizon's values
     assert response.status_code == 200
     assert get_domain("boating").raw_config() == before
 

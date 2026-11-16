@@ -166,7 +166,7 @@ def test_choosing_a_provider_and_model_writes_horizons_config(client, home):
 
     local = client.post("/api/domains/flight-sim/model", json={"provider": "ollama", "model": "llama-test"}).json()
     ai = get_domain("flight-sim").raw_config()["ai"]
-    assert ai["provider"] == "ollama" and ai["base_url"].startswith("http://localhost")
+    assert ai["provider"] == "ollama" and "base_url" not in ai  # empty: Horizon's own address (or OLLAMA_HOST)
     assert local["missing_env"] == [] and local["settings"]["ai"]["api_key_present"] is True
 
     custom = client.post("/api/domains/flight-sim/model",
