@@ -126,8 +126,12 @@
     const interests = M.h('textarea', { id: 'src-interests', rows: 2 }, start || '');
     const message = window.MastHeadKit.messageArea(M);
     const button = M.h('button', { type: 'button', class: 'btn' }, 'Ask Horizon');
+    // Examples from Horizon's own setup (get_interests), plus one outside technology.
+    const examples = M.h('span', { class: 'help', id: 'src-interests-examples' },
+      'A few words or a sentence, in any language. For example: “LLM inference”, “Rust systems programming”, '
+      + '“web security” (Horizon’s own examples), or “flight simulator add-ons, airliner and scenery releases”.');
     const help = M.h('span', { class: 'help', id: 'src-interests-help' });
-    interests.setAttribute('aria-describedby', 'src-interests-help');
+    interests.setAttribute('aria-describedby', 'src-interests-examples src-interests-help');
     function gate() {
       button.disabled = !keyOk();
       help.textContent = keyOk()
@@ -155,7 +159,7 @@
     return {
       gate,
       node: M.h('div', { class: 'stack' },
-        M.h('div', { class: 'field' }, M.h('label', { for: 'src-interests' }, 'What should this domain follow?'), interests, help),
+        M.h('div', { class: 'field' }, M.h('label', { for: 'src-interests' }, 'What should this domain follow?'), interests, examples, help),
         M.h('div', {}, button), message.area),
     };
   }

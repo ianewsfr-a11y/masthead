@@ -105,7 +105,7 @@
     const chosen = () => providers.find((p) => p.id === select.value);
     function update(initial) {
       const p = chosen();
-      if (!p) { example.textContent = ''; addressHelp.textContent = ''; versionField.hidden = true; return; }
+      if (!p) { example.textContent = 'Choose a provider first: Horizon’s default model for it is shown here, for example claude-sonnet-5-5 for Anthropic.'; addressHelp.textContent = ''; versionField.hidden = true; return; }
       example.textContent = `Horizon's default for ${p.label} is ${p.example_model}. Check that your provider still offers it, or type another name exactly as your provider writes it.`;
       if (!initial) {
         version.value = p.api_version || '';
