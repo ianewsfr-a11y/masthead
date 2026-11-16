@@ -6,6 +6,20 @@ MastHead runs on your computer. Your sources, your AI key or your local model: n
 
 **Status: early prototype.** It covers one loop end to end: look at a domain's sources, run the pipeline stage by stage, and see why every story was kept or dropped.
 
+![The run inspector: every story of a run, its score, and why it was kept, merged or dropped](docs/screenshots/run-inspector.png)
+
+<table>
+<tr>
+<td width="34%"><img src="docs/screenshots/replay.png" alt="Replay at no cost: move the minimum score and see what the run would have kept, with no model call"></td>
+<td><img src="docs/screenshots/briefing.png" alt="The briefing Horizon wrote, in each language of the domain"></td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/screenshots/domain-editor.png" alt="The domain editor: subject and AI, sources, editorial rules, settings, trial run"></td>
+</tr>
+</table>
+
+<sub>A real flight-simulation domain: 35 stories collected, scored by the model, merged and selected by Horizon, briefed in English, French and Chinese.</sub>
+
 ## What it does today
 
 - **Domains.** One folder per subject, each with its own Horizon configuration, profiles, data and runs.
