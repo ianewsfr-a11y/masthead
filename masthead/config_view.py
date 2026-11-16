@@ -139,9 +139,12 @@ def set_sources_enabled(domain: Domain, changes: Any) -> None:
 def settings_view(domain: Domain, service: MastHeadService, key_available: bool) -> dict[str, Any]:
     ctx = service.context()
     config = ctx.config
-    registry = service._profiles(ctx)
+    try:
+        loaded = service._profiles(ctx).profiles
+    except ValueError:
+        loaded = ()  # a draft whose rules are not written yet
     profiles = []
-    for profile in registry.profiles:
+    for profile in loaded:
         settings = config.processing.profile_settings.get(profile.id)
         content = profile.definition.content
         profiles.append({
@@ -177,19 +180,48 @@ def settings_view(domain: Domain, service: MastHeadService, key_available: bool)
     }
 
 
+def _set_threshold(raw: dict[str, Any], profile_id: Any, value: Any) -> None:
+    """The minimum score of one profile; the other profiles keep theirs. Empty removes it."""
+    if value is not None and not (isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 10):
+        raise DomainError("The minimum score must be between 0 and 10.")
+    processing = raw.setdefault("processing", {})
+    profile_id = profile_id or processing.get("default_profile") or "tech-news"
+    if not isinstance(profile_id, str):
+        raise DomainError("Unknown profile.")
+    settings = processing.setdefault("profile_settings", {})
+    entry = settings.setdefault(profile_id, {})
+    if value is None:
+        entry.pop("threshold", None)  # Horizon's default: no minimum
+    else:
+        entry["threshold"] = value
+    if not entry:
+        settings.pop(profile_id)
+    if not settings:
+        processing.pop("profile_settings")
+
+
+def _effective(raw: dict[str, Any]) -> Config:
+    from src.storage.manager import _expand_env_vars
+
+    return Config.model_validate(_expand_env_vars(json.loads(json.dumps(raw))))
+
+
 def update_settings(domain: Domain, changes: dict[str, Any]) -> None:
-    """Apply the essential settings: minimum score, briefing size, time window."""
+    """Apply the essential settings: minimum score (of one profile), briefing size, time window.
+
+    A value equal to what Horizon already uses is not written.
+    """
     raw = domain.raw_config()
+    current = _effective(raw)
     if "threshold" in changes:
-        value = changes["threshold"]
-        if value is not None and not (isinstance(value, (int, float)) and 0 <= value <= 10):
-            raise DomainError("The minimum score must be between 0 and 10.")
-        processing = raw.setdefault("processing", {})
-        settings = processing.setdefault("profile_settings", {})
-        profile_ids = changes.get("profiles") or list(settings) or [processing.get("default_profile", "tech-news")]
-        for profile_id in profile_ids:
-            entry = settings.setdefault(profile_id, {})
-            entry["threshold"] = value
+        profile_id = changes.get("profile") or current.processing.default_profile
+        settings = current.processing.profile_settings.get(profile_id)
+        if changes["threshold"] != (settings.threshold if settings else None):
+            _set_threshold(raw, profile_id, changes["threshold"])
+    if "max_items" in changes and changes["max_items"] == current.digest.max_items:
+        changes = {key: value for key, value in changes.items() if key != "max_items"}
+    if "time_window_hours" in changes and changes["time_window_hours"] == current.collection.time_window_hours:
+        changes = {key: value for key, value in changes.items() if key != "time_window_hours"}
     if "max_items" in changes:
         value = changes["max_items"]
         if value is not None and not (isinstance(value, int) and value > 0):

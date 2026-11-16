@@ -106,6 +106,21 @@ class MastHeadService(HorizonPipelineService):
     def context(self) -> PipelineContext:
         return self._build_context(horizon_path=self.workspace, config_path=None, sources=None)[0]
 
+    def profile_name(self, profile_id: str) -> str:
+        """The name Horizon shows for a profile, or its id when the profiles cannot be read."""
+        try:
+            return self._profiles(self.context()).get(profile_id).definition.name
+        except ValueError:
+            return profile_id
+
+    def rules_missing(self) -> str | None:
+        """Why Horizon cannot load this domain's profiles yet (a new draft has none), or None."""
+        try:
+            self._profiles(self.context())
+        except ValueError as exc:
+            return str(exc)
+        return None
+
     async def filter_items(  # type: ignore[override]
         self,
         run_id: str,

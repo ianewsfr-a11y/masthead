@@ -88,7 +88,12 @@
     }
     let data = null;
     try { data = await response.json(); } catch (error) { /* not JSON */ }
-    if (!response.ok) throw new Error((data && data.error) || `Request failed (${response.status}).`);
+    if (!response.ok) {
+      const error = new Error((data && data.error) || `Request failed (${response.status}).`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
     return data;
   }
   const api = {
@@ -198,12 +203,20 @@
           : h('button', { type: 'button', class: 'btn primary', onclick: () => { state.domain = domain.id; store.set(domain.id); window.location.hash = '#/runs'; } }, 'Open'),
         domain.draft ? null : h('a', { class: 'btn', href: `#/edit/${encodeURIComponent(domain.id)}` }, 'Edit domain'))));
 
+    // First start: nothing to open yet, so the screen offers the two ways to get a domain.
+    const first = state.domains.length ? null : h('section', { class: 'panel empty-start' },
+      h('h2', {}, 'No domain yet'),
+      h('p', {}, 'A domain is one subject you follow, with its own sources, rules, model and history. Create one here, or bring the setup you already use with Horizon.'),
+      h('div', { class: 'actions' },
+        h('a', { class: 'btn primary', href: '#/new' }, 'Create a domain'),
+        h('button', { type: 'button', class: 'btn', onclick: () => { const target = document.getElementById('import-setup'); target.scrollIntoView(); target.focus(); } }, 'Import a Horizon setup')));
     show(
       pageHead('Domains', 'One domain per subject you follow. Each has its own sources, rules, languages, model and history.',
-        h('a', { class: 'btn primary', href: '#/new' }, 'New domain')),
-      h('div', { class: 'cards' }, ...cards),
+        state.domains.length ? h('a', { class: 'btn primary', href: '#/new' }, 'New domain') : null),
+      first,
+      state.domains.length ? h('div', { class: 'cards' }, ...cards) : null,
       window.MastHeadAI.keysPanel(window.MastHead, await api.get('/api/ai'), viewDomains),
-      panel('Bring an existing Horizon setup',
+      h('section', { class: 'panel', id: 'import-setup', tabindex: '-1' }, h('h2', {}, 'Bring an existing Horizon setup'),
         h('p', { class: 'hint' }, 'If you already use Horizon from the command line, import its configuration from your terminal:'),
         h('pre', { class: 'cmd' }, 'masthead import --id boating --name "Boating" \\\n  --config path/to/config.json --profiles path/to/profiles'),
         h('p', { class: 'hint' }, 'Then reload this page.')));
@@ -287,8 +300,7 @@
         jobHolder, otherBusy,
         listing.active_job ? null : h('div', { class: 'empty' },
           h('strong', {}, 'No run yet for this domain.'),
-          h('span', {}, '“Collect only” reads your sources without calling a model: a free way to check them. “Run now” does the whole pipeline and needs your AI key.'),
-          h('span', {}, 'To explore the inspector first, stop MastHead and type: masthead demo')));
+          h('span', {}, '“Collect only” reads your sources without calling a model: a free way to check them. “Run now” does the whole pipeline and needs your AI key.')));
       return;
     }
 
@@ -437,7 +449,10 @@
     const start = baseThreshold === null ? 5 : baseThreshold;
     const readout = h('span', { class: 'big-amber' }, String(start));
     const slider = h('input', { id: 'replay', type: 'range', min: 0, max: 10, step: 0.5, value: start });
-    const apply = h('button', { type: 'button', class: 'btn primary', disabled: true }, 'Use this score from now on');
+    // Only the domain's main profile is changed; any other profile keeps its own minimum.
+    const several = detail.profile_count > 1;
+    const apply = h('button', { type: 'button', class: 'btn primary', disabled: true },
+      several ? `Use this score for profile “${detail.default_profile_name}” from now on` : 'Use this score from now on');
     let timer = null;
     let sequence = 0;
 
@@ -473,7 +488,7 @@
     apply.addEventListener('click', async () => {
       apply.disabled = true;
       try {
-        await api.post(domainPath('/settings'), { threshold: Number(slider.value) });
+        await api.post(domainPath('/settings'), { threshold: Number(slider.value), profile: detail.default_profile });
         toast(`Minimum score set to ${slider.value}. It applies from the next run; this run is unchanged.`);
       } catch (error) { apply.disabled = false; toast(error.message, true); }
     });
@@ -481,7 +496,8 @@
     const replay = panel('Replay at no cost',
       h('p', { class: 'hint' }, 'Scores are already stored. Moving the minimum recalculates the selection with no model call, and changes nothing in this run.'),
       h('div', { class: 'stack' }, h('div', { class: 'spread' }, h('label', { for: 'replay', class: 'strong' }, 'Minimum score tested'), readout), slider),
-      replayResult, apply);
+      replayResult, apply,
+      several ? h('p', { class: 'hint' }, 'The other profiles of this domain keep their own minimum score.') : null);
 
     // Usage
     const pricing = detail.pricing;

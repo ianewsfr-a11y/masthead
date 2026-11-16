@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from masthead.domains import TEMPLATES_DIR, create_from_template, get_domain, import_domain
+from masthead.domains import get_domain, import_domain
+from support import FIXTURES_DIR as TEMPLATES_DIR, create_from_template
 from masthead.new_domain import parse_source_line
 from masthead.server import create_app
 
@@ -111,23 +112,95 @@ def imported(home, tmp_path):
 def test_hand_written_rules_are_shown_as_files_and_never_overwritten_by_the_form(client, imported):
     state = client.get("/api/domains/imported/profile-form").json()
     assert state["managed"] is False and "Hand-written rules." in state["files"]["match.md"]
+    analysis = imported.path / "profiles" / "flightsim-news" / "analysis.md"
+    before = analysis.read_text(encoding="utf-8")
 
     refused = client.post("/api/domains/imported/profile-form", json={"fields": state["fields"]})
-    assert refused.status_code == 409
-    match = imported.path / "profiles" / "flightsim-news" / "match.md"
-    assert match.read_text(encoding="utf-8") == "Hand-written rules.\n"
-
-    edited = client.post("/api/domains/imported/profile-file", json={"file": "match.md", "text": "Edited by hand.\n"})
-    assert edited.status_code == 200 and match.read_text(encoding="utf-8") == "Edited by hand.\n"
+    assert refused.status_code == 409 and "analysis.md" in refused.json()["files"]
+    assert analysis.read_text(encoding="utf-8") == before
 
     replaced = client.post("/api/domains/imported/profile-form", json={"fields": state["fields"], "replace": True})
     assert replaced.status_code == 200 and replaced.json()["managed"] is True
-    assert "Edited by hand." not in match.read_text(encoding="utf-8")
+    match = imported.path / "profiles" / "flightsim-news" / "match.md"
+    assert match.read_text(encoding="utf-8") == "Hand-written rules.\n"  # the form never writes match.md
 
 
-def test_a_new_domain_rules_are_managed_and_remember_when_saved(client):
-    client.post("/api/new-domain", json={"id": "boating", "name": "Boating", "languages": ["en"], "copy_from": "flight-sim"})
-    state = client.get("/api/domains/boating/profile-form").json()
-    assert state["managed"] is True and state["saved_by_user"] is False
-    saved = client.post("/api/domains/boating/profile-form", json={"fields": state["fields"]}).json()
-    assert saved["saved_by_user"] is True
+def test_a_file_edited_by_hand_is_never_replaced_by_the_form_without_confirmation(client):
+    """Point 2: also in a domain whose rules were written with the form."""
+    client.post("/api/new-domain", json={"id": "boating", "name": "Boating", "languages": ["en"],
+                                         "provider": "anthropic", "model": "claude-test"})
+    fields = {"goal": "Score boating news."}
+    first = client.post("/api/domains/boating/profile-form", json={"fields": fields})
+    assert first.status_code == 200 and first.json()["managed"] is True
+    edited = client.post("/api/domains/boating/profile-file", json={"file": "analysis.md", "text": "My own words.\n"})
+    assert edited.json()["changed_by_hand"] == ["analysis.md"] and edited.json()["managed"] is False
+
+    refused = client.post("/api/domains/boating/profile-form", json={"fields": {"goal": "Something else."}})
+    assert refused.status_code == 409 and refused.json()["files"] == ["analysis.md"]
+    analysis = get_domain("boating").path / "profiles" / "boating" / "analysis.md"
+    assert analysis.read_text(encoding="utf-8") == "My own words.\n"
+
+    # A file changed outside MastHead altogether counts too.
+    enrichment = analysis.with_name("enrichment.md")
+    client.post("/api/domains/boating/profile-form", json={"fields": fields, "replace": True})
+    enrichment.write_text("Typed in a text editor.\n", encoding="utf-8")
+    again = client.post("/api/domains/boating/profile-form", json={"fields": fields})
+    assert again.status_code == 409 and again.json()["files"] == ["enrichment.md"]
+
+
+# -- settings ------------------------------------------------------------------------
+
+
+def test_the_minimum_score_changes_only_the_profile_shown(client):
+    """Point 1: the other profiles keep their own minimum score."""
+    domain = get_domain("flight-sim")
+    raw = domain.raw_config()
+    raw["processing"]["profile_settings"]["second"] = {"threshold": 3.0, "topic_dedup": False}
+    domain.write_raw_config(raw)
+
+    assert client.post("/api/domains/flight-sim/settings", json={"threshold": 8, "profile": "flightsim-news"}).status_code == 200
+    settings = get_domain("flight-sim").raw_config()["processing"]["profile_settings"]
+    assert settings["flightsim-news"]["threshold"] == 8 and settings["second"] == {"threshold": 3.0, "topic_dedup": False}
+
+    # Without a profile named, the domain's default profile, and only that one.
+    client.post("/api/domains/flight-sim/settings", json={"threshold": 7.5})
+    settings = get_domain("flight-sim").raw_config()["processing"]["profile_settings"]
+    assert settings["flightsim-news"]["threshold"] == 7.5 and settings["second"]["threshold"] == 3.0
+
+    # Empty removes the minimum of that profile only; nothing is written as null.
+    client.post("/api/domains/flight-sim/settings", json={"threshold": None, "profile": "flightsim-news"})
+    settings = get_domain("flight-sim").raw_config()["processing"]["profile_settings"]
+    assert "threshold" not in settings["flightsim-news"] and settings["second"]["threshold"] == 3.0
+
+
+def test_saving_settings_writes_no_value_horizon_already_uses(client):
+    client.post("/api/new-domain", json={"id": "boating", "name": "Boating", "languages": ["en"],
+                                         "provider": "anthropic", "model": "claude-test"})
+    before = get_domain("boating").raw_config()
+    response = client.post("/api/domains/boating/settings",
+                           json={"time_window_hours": 24, "threshold": None, "max_items": None})
+    assert response.status_code == 200
+    assert get_domain("boating").raw_config() == before
+
+
+# -- first start and commands -------------------------------------------------------
+
+
+def test_first_start_creates_no_domain(tmp_path, monkeypatch, capsys):
+    """Point 8: no starter domain; the interface offers to create or import one."""
+    from masthead import cli
+    from masthead.domains import list_domains
+
+    monkeypatch.setenv("MASTHEAD_HOME", str(tmp_path / "empty"))
+    with TestClient(create_app(), headers=HEADERS) as fresh:
+        assert fresh.get("/api/domains").json()["domains"] == []
+    assert cli.main(["domains"]) == 0 and capsys.readouterr().out == ""
+    assert list_domains() == []
+
+
+def test_the_demo_command_is_gone():
+    """Point 9: the demo is a test helper, not part of the product."""
+    from masthead import cli
+
+    with pytest.raises(SystemExit):
+        cli.main(["demo"])

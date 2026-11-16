@@ -17,7 +17,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from masthead.domains import create_from_template, get_domain
+from masthead.domains import get_domain
+from support import create_from_template
 from masthead.server import create_app
 
 HEADERS = {"host": "127.0.0.1:8765"}
@@ -90,22 +91,40 @@ def draft(client):
 # -- step 1: subject -----------------------------------------------------------
 
 
+OFF = {"hackernews": {"enabled": False}, "reddit": {"enabled": False}, "telegram": {"enabled": False}}
+
+
 def test_a_draft_is_a_valid_horizon_domain_with_nothing_read_by_default(client, draft):
     meta = json.loads(draft.meta_path.read_text(encoding="utf-8"))
     assert meta["draft"] is True and meta["name"] == "Boating"
     raw = draft.raw_config()
     starter = get_domain("flight-sim").raw_config()
-    assert raw["ai"]["model"] == starter["ai"]["model"] and raw["ai"]["languages"] == ["en", "fr"]
-    assert raw["ai"]["api_key_env"] == starter["ai"]["api_key_env"]
+    # Only what the user chose: the copied AI with their languages, the profile id, and the three
+    # sources Horizon reads by default switched off. No threshold, no maximum, no default values.
+    assert raw == {"ai": {**starter["ai"], "languages": ["en", "fr"]},
+                   "processing": {"default_profile": "boating"}, "sources": OFF}
     assert not (draft.path / ".env").exists()  # the key is never copied
+    assert not (draft.path / "profiles").exists()  # nothing written before the rules are saved
 
     overview = client.get("/api/domains/boating").json()
-    assert overview["draft"] is True
-    assert overview["sources"] == [] or all(not row["enabled"] for row in overview["sources"])
-    assert not any(row["implicit"] for row in overview["sources"])  # Hacker News, Reddit, Telegram off
+    assert overview["draft"] is True and overview["rules_missing"] is True
+    assert overview["sources"] and all(not row["enabled"] for row in overview["sources"])
+    assert {row["kind"] for row in overview["sources"]} == {"hackernews", "reddit", "telegram"}  # shown, off
+    assert not any(row["implicit"] for row in overview["sources"])
     assert overview["missing_env"] == ["ANTHROPIC_API_KEY"]
-    profile = overview["settings"]["profiles"][0]
-    assert profile["id"] == "boating" and profile["analysis_max_chars"] == 4000
+    assert overview["settings"]["profiles"] == []
+
+
+def test_a_draft_without_a_copy_holds_only_what_was_typed(client):
+    response = client.post("/api/new-domain", json={"id": "plain", "name": "Plain", "languages": ["en"],
+                                                    "provider": "anthropic", "model": "claude-test"})
+    assert response.status_code == 201, response.text
+    assert get_domain("plain").raw_config() == {
+        "ai": {"provider": "anthropic", "model": "claude-test", "api_key_env": "ANTHROPIC_API_KEY"},
+        "processing": {"default_profile": "plain"},
+        "sources": OFF,
+    }
+    assert client.post("/api/new-domain", json={"id": "noai", "name": "No AI", "languages": ["en"]}).status_code == 400
 
 
 def test_a_draft_id_must_be_new_and_well_formed(client, draft):
@@ -154,10 +173,11 @@ def test_sources_of_each_kind_are_added_to_the_config(client, draft):
         response = client.post("/api/domains/boating/source-add", json=body)
         assert response.status_code == 200, response.text
     raw = draft.raw_config()["sources"]
-    assert raw["rss"][0]["url"] == "https://example.org/feed" and raw["rss"][0]["profile"] == "boating"
-    assert raw["github"][0] == {**raw["github"][0], "type": "repo_releases", "owner": "example", "repo": "boat-tools"}
-    assert raw["reddit"]["enabled"] is True and raw["reddit"]["subreddits"][0]["subreddit"] == "sailing"
-    assert raw["telegram"]["enabled"] is True and raw["telegram"]["channels"][0]["channel"] == "boatnews"
+    # What identifies each source and the domain's profile; Horizon's defaults for everything else.
+    assert raw["rss"] == [{"name": "Sail News", "url": "https://example.org/feed", "profile": "boating"}]
+    assert raw["github"] == [{"type": "repo_releases", "owner": "example", "repo": "boat-tools", "profile": "boating"}]
+    assert raw["reddit"] == {"enabled": True, "subreddits": [{"subreddit": "sailing", "profile": "boating"}]}
+    assert raw["telegram"] == {"enabled": True, "channels": [{"channel": "boatnews", "profile": "boating"}]}
     assert raw["hackernews"]["enabled"] is False
 
     again = client.post("/api/domains/boating/source-add",
@@ -210,45 +230,58 @@ def test_suggestions_need_the_drafts_own_key(client, draft):
 # -- step 3: editorial rules ------------------------------------------------------
 
 
-def test_the_form_writes_profile_files_that_horizon_loads(client, draft):
+RULES = {"goal": "Score news for sailors.", "summary": "Lead with what changed.",
+         "tiers": ["Major news.", "", "", "", "Noise."]}
+
+
+def test_the_form_starts_empty_and_writes_only_what_was_typed(client, draft):
     from src.processing.profiles import ProfileRegistry
 
     form = client.get("/api/domains/boating/profile-form").json()
-    assert form["fields"]["belongs"] and len(form["fields"]["tiers"]) == 5
+    assert form["exists"] is False and form["files"] == {}
+    assert all(value in ("", False, None) for key, value in form["fields"].items() if key != "tiers")
+    assert form["fields"]["tiers"] == [""] * 5
+    assert not {"belongs", "typical", "excluded"} & set(form["fields"])  # match.md is not in the form
 
-    fields = {**form["fields"], "belongs": "News about sailing and motor boats.",
-              "excluded": "Boat sales listings.", "web_search": False, "community": False,
-              "analysis_max_chars": 6000}
-    saved = client.post("/api/domains/boating/profile-form", json={"fields": fields})
+    saved = client.post("/api/domains/boating/profile-form", json={"fields": RULES})
     assert saved.status_code == 200, saved.text
     files = saved.json()["files"]
-    assert "News about sailing and motor boats." in files["match.md"]
-    assert "Boat sales listings." in files["match.md"]
-    assert "9-10" in files["analysis.md"]
+    assert files["analysis.md"] == "Score news for sailors.\n\n- 9-10: Major news.\n- 0-2: Noise.\n"
+    assert files["enrichment.md"] == "- `summary`: Lead with what changed.\n"
+    assert files["match.md"] == ""  # Horizon requires the file; it can stay empty
+    definition = json.loads(files["profile.json"])
+    assert definition == {"id": "boating", "name": "Boating", "match": "match.md", "analysis": "analysis.md",
+                          "enrichment": {"prompt": "enrichment.md", "blocks": [{"id": "summary", "primary": True}]}}
+    loaded = ProfileRegistry.load(draft.path / "profiles", "boating").get("boating")
+    assert loaded.definition.content.analysis_max_chars == 1000  # Horizon's own default, not written
 
-    registry = ProfileRegistry.load(draft.path / "profiles", "boating")
-    loaded = registry.get("boating")
-    assert loaded.definition.content.analysis_max_chars == 6000
-    tools = {block.id: block.tools for block in loaded.definition.enrichment.blocks}
-    assert "web_search" not in sum(tools.values(), []) and "community_discussion" not in tools
-    assert client.get("/api/domains/boating/profile-form").json()["fields"]["excluded"] == "Boat sales listings."
+    more = {**RULES, "analysis_max_chars": 6000, "background": True, "web_search": False, "profile_name": "Sailing"}
+    files = client.post("/api/domains/boating/profile-form", json={"fields": more}).json()["files"]
+    definition = json.loads(files["profile.json"])
+    assert definition["content"] == {"analysis_max_chars": 6000} and definition["name"] == "Sailing"
+    assert {"id": "background", "tools": ["history_search"]} in definition["enrichment"]["blocks"]
+    assert "Use three to five" not in files["analysis.md"] and "web_search" not in files["enrichment.md"]
 
 
 def test_the_profile_text_can_be_edited_directly(client, draft):
     text = "# Boating profile\n\nOnly sailing news.\n"
+    before = client.post("/api/domains/boating/profile-file", json={"file": "match.md", "text": text})
+    assert before.status_code == 400  # Horizon needs profile.json first: save the form once
+    client.post("/api/domains/boating/profile-form", json={"fields": RULES})
     assert client.post("/api/domains/boating/profile-file", json={"file": "match.md", "text": text}).status_code == 200
     assert (draft.path / "profiles" / "boating" / "match.md").read_text(encoding="utf-8") == text
     assert client.post("/api/domains/boating/profile-file",
                        json={"file": "../domain.json", "text": "x"}).status_code == 400
-    assert client.post("/api/domains/boating/profile-file", json={"file": "match.md", "text": "  "}).status_code == 400
+    assert client.post("/api/domains/boating/profile-file", json={"file": "match.md", "text": ""}).status_code == 200
 
 
 def test_invalid_form_values_are_refused(client, draft):
-    fields = client.get("/api/domains/boating/profile-form").json()["fields"]
     assert client.post("/api/domains/boating/profile-form",
-                       json={"fields": {**fields, "analysis_max_chars": 100}}).status_code == 400
+                       json={"fields": {**RULES, "analysis_max_chars": 100}}).status_code == 400
     assert client.post("/api/domains/boating/profile-form",
-                       json={"fields": {**fields, "belongs": ""}}).status_code == 400
+                       json={"fields": {**RULES, "tiers": ["one"]}}).status_code == 400
+    assert client.post("/api/domains/boating/profile-form",
+                       json={"fields": {**RULES, "background": "yes"}}).status_code == 400
 
 
 # -- step 4: trial run, then create or discard -------------------------------------
@@ -256,6 +289,9 @@ def test_invalid_form_values_are_refused(client, draft):
 
 def test_a_trial_stops_before_writing(client, draft, feeds):
     client.post("/api/domains/boating/source-add", json={"kind": "rss", "name": "Fresh", "url": f"{feeds}/fresh.xml"})
+    early = client.post("/api/domains/boating/runs", json={"until": "collect"})
+    assert early.status_code == 409 and "editorial rules" in early.json()["error"]
+    client.post("/api/domains/boating/profile-form", json={"fields": RULES})
     job = client.post("/api/domains/boating/runs", json={"until": "select"})
     assert job.status_code == 202
     assert [s["status"] for s in job.json()["stages"]][3:] == ["skipped", "skipped"]  # write, briefing

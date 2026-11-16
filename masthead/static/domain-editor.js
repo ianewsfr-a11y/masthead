@@ -36,14 +36,14 @@
     const status = await M.api.get('/api/ai');
     if (!M.isCurrent(token)) return;
     const domains = M.state.domains.filter((d) => !d.draft);
-    const first = domains[0] || {};
     const plain = { autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', autocorrect: 'off' };
     const name = M.h('input', { type: 'text', required: true, autocomplete: 'off', maxlength: 80 });
     const id = M.h('input', { type: 'text', required: true, class: 'mono', pattern: '[a-z][a-z0-9\\-]{0,40}', ...plain });
     const description = M.h('input', { type: 'text', maxlength: 200 });
-    const copyFrom = M.h('select', {}, ...domains.map((d) => M.h('option', { value: d.id }, d.name)));
-    const languages = M.h('input', { type: 'text', class: 'mono', required: true, ...plain, value: (first.languages || ['en']).join(', ') });
-    const ai = window.MastHeadAI.modelFields(M, status.providers, { provider: first.provider || 'anthropic', model: first.model || '' }, 'nd-ai');
+    const copyFrom = M.h('select', {}, M.h('option', { value: '' }, 'Nothing: Horizon’s defaults'),
+      ...domains.map((d) => M.h('option', { value: d.id }, d.name)));
+    const languages = M.h('input', { type: 'text', class: 'mono', required: true, ...plain, value: 'en' });
+    const ai = window.MastHeadAI.modelFields(M, status.providers, { provider: 'anthropic', model: '' }, 'nd-ai');
     let idEdited = false;
     name.addEventListener('input', () => { if (!idEdited) id.value = slug(name.value); });
     id.addEventListener('input', () => { idEdited = true; });
@@ -178,6 +178,7 @@
         try {
           await M.api.post(`/api/domains/${enc(ctx.domainId)}/settings`, {
             time_window_hours: Number(hours.value),
+            profile: profile ? profile.id : undefined,
             threshold: threshold.value === '' ? null : Number(threshold.value),
             max_items: maxItems.value === '' ? null : Number(maxItems.value),
           });
@@ -187,7 +188,9 @@
         save.disabled = false;
       },
     },
-      field(M, 'set-threshold', 'Minimum score', threshold, 'From 0 to 10. Stories scored below it are left out. Leave empty to keep everything.'),
+      field(M, 'set-threshold', 'Minimum score', threshold, settings.profiles.length > 1 && profile
+        ? `From 0 to 10, for profile “${profile.name}”. The other profiles keep their own minimum. Leave empty to keep everything.`
+        : 'From 0 to 10. Stories scored below it are left out. Leave empty to keep everything.'),
       field(M, 'set-max', 'Stories per briefing', maxItems, 'The most stories a briefing can hold. Leave empty for no maximum.'),
       field(M, 'set-hours', 'Time window, in hours', hours, 'How far back each run looks for new stories.'),
       M.h('div', { class: 'row-actions' }, save, tracker.indicator), message.area));
@@ -213,9 +216,11 @@
     function gate(fresh) {
       const sources = fresh.sources.filter((s) => s.enabled).length;
       const key = fresh.settings.ai.api_key_present;
-      collect.disabled = !sources;
-      score.disabled = !sources || !key;
+      const rules = !fresh.rules_missing;
+      collect.disabled = !sources || !rules;
+      score.disabled = !sources || !key || !rules;
       reason.textContent = !sources ? 'Switch on at least one source first (step Sources).'
+        : !rules ? 'Save the editorial rules first (step Editorial rules): Horizon needs them before any run, even Collect only.'
         : !key ? 'Collect only works now. Score and select needs the key of the AI (step Subject and AI).'
           : 'Collect only calls no model. Score and select uses the model to score; nothing is written and no briefing is produced.';
     }
@@ -259,7 +264,7 @@
     const ai = overview.settings.ai;
     if (!ai.api_key_present) items.push(['subject', `No key for the AI (${ai.api_key_env}): scoring and suggestions cannot run.`]);
     if (!overview.sources.some((s) => s.enabled)) items.push(['sources', 'No source is switched on.']);
-    if (overview.draft && rules.managed && !rules.saved_by_user) items.push(['rules', 'The editorial rules still have the starting text.']);
+    if (!rules.exists) items.push(['rules', 'No editorial rules yet: Horizon needs them before any run.']);
     return items;
   }
 
@@ -321,7 +326,8 @@
       const own = Object.assign(Object.create(ctx), {
         tracker: trackers[id],
         refresh: () => refresh(),
-        onSaved: (state) => { ctx.rules = state; drawNav(); drawMissing(); },
+        // Saving the rules for the first time is what lets a run start: refresh the whole editor.
+        onSaved: (state) => { ctx.rules = state; refresh(); },
       });
       steps[id] = maker(M, own);
     };
@@ -345,8 +351,11 @@
       const o = ctx.overview;
       if (id === 'subject') return o.settings.ai.api_key_present ? `${o.settings.ai.provider} · ${o.settings.ai.model}` : 'Key missing';
       if (id === 'sources') return M.plural(o.sources.filter((s) => s.enabled).length, 'source on', 'sources on');
-      if (id === 'rules') return !ctx.rules.managed ? 'Hand-written files' : ctx.rules.saved_by_user ? 'Saved' : 'Starting text';
-      if (id === 'settings') return `Minimum score ${o.settings.profiles[0] && o.settings.profiles[0].threshold !== null ? o.settings.profiles[0].threshold : 'none'}`;
+      if (id === 'rules') return !ctx.rules.exists ? 'Not written yet' : ctx.rules.managed ? 'Written with the form' : 'Files changed by hand';
+      if (id === 'settings') {
+        const main = o.settings.profiles.find((p) => p.default) || o.settings.profiles[0];
+        return `Minimum score ${main && main.threshold !== null ? main.threshold : 'none'}`;
+      }
       return 'Collect, then score';
     }
     function drawNav() {

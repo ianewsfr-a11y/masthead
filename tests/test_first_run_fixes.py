@@ -65,8 +65,8 @@ async def test_run_with_failed_sources_is_not_reported_as_a_plain_success(tmp_pa
     """A run that finished while some feeds failed must say so in the run list."""
     from fastapi.testclient import TestClient
 
-    from masthead.demo import seed_demo_run
-    from masthead.domains import create_from_template
+    from demo_run import seed_demo_run
+    from support import create_from_template
     from masthead.server import create_app
     from masthead.service import MastHeadService
 

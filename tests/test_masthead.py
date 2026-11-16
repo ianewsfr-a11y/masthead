@@ -13,8 +13,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from masthead import journal as jn
-from masthead.demo import seed_demo_run
-from masthead.domains import create_from_template, get_domain
+from demo_run import seed_demo_run
+from masthead.domains import get_domain
+from support import create_from_template
 from masthead.server import create_app
 from masthead.service import MastHeadService
 

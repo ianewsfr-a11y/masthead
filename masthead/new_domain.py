@@ -23,15 +23,17 @@ from src.mcp.errors import HorizonMcpError
 from src.setup.ai_recommend import get_ai_recommendations
 
 from . import config_view, profile_form
-from .domains import TEMPLATES_DIR, Domain, DomainError, _check_id, domains_dir, get_domain
+from .domains import Domain, DomainError, _check_id, domains_dir, get_domain
 from .env import DomainEnvironment
 from .service import MastHeadService
 
 TEST_WINDOW_HOURS = 7 * 24
 _LANGUAGE = re.compile(r"^[a-z]{2,3}(-[A-Za-z]{2,4})?$")
-# Horizon reads these unless they are switched off: a new domain switches them off and says so.
-_OFF_BY_DEFAULT = {"hackernews": {"enabled": False}, "reddit": {"enabled": False, "subreddits": []},
-                   "telegram": {"enabled": False, "channels": []}}
+# Horizon reads these unless they are switched off. A new domain switches them off and says
+# so: the one value MastHead writes that differs from Horizon's defaults (owner's decision).
+_OFF_BY_DEFAULT = {"hackernews": {"enabled": False}, "reddit": {"enabled": False},
+                   "telegram": {"enabled": False}}
+_HORIZON_LANGUAGES = ["en"]
 
 
 class DraftError(Exception):
@@ -60,14 +62,15 @@ def _languages(value: Any) -> list[str]:
 
 
 def _ai_section(copy_from: str | None) -> dict[str, Any]:
-    """The model settings of an existing domain, or of the starter. Never the key itself."""
-    if copy_from:
-        return copy.deepcopy(get_domain(copy_from).raw_config()["ai"])
-    starter = json.loads((TEMPLATES_DIR / "flight-sim" / "data" / "config.json").read_text(encoding="utf-8"))
-    return starter["ai"]
+    """The model settings of an existing domain, when the user chose one. Never the key itself."""
+    return copy.deepcopy(get_domain(copy_from).raw_config()["ai"]) if copy_from else {}
 
 
 def create_draft(body: dict[str, Any]) -> Domain:
+    """A draft holding only what the user typed, plus the three sources Horizon reads by default, off.
+
+    No profile is written here: the editorial rules are written when the user saves them.
+    """
     domain_id = _check_id(str(body.get("id", "")).strip())
     name = str(body.get("name") or "").strip()
     if not name:
@@ -75,12 +78,15 @@ def create_draft(body: dict[str, Any]) -> Domain:
     description = str(body.get("description") or "").strip() or None
     languages = _languages(body.get("languages"))
     ai = _ai_section(body.get("copy_from"))
-    ai["languages"] = languages
+    if languages != _HORIZON_LANGUAGES or "languages" in ai:
+        ai["languages"] = languages
     if body.get("provider"):
         ai = config_view.ai_choice(ai, {"provider": body["provider"], "model": body.get("model"),
                                         "base_url": body.get("base_url")})
     elif isinstance(body.get("model"), str) and body["model"].strip():
         ai["model"] = body["model"].strip()
+    if not ai.get("provider"):
+        raise DomainError("Choose the AI this domain uses.")
 
     target = domains_dir() / domain_id
     if target.exists():
@@ -89,18 +95,11 @@ def create_draft(body: dict[str, Any]) -> Domain:
     try:
         domain = Domain(id=domain_id, path=target)
         _write_json(domain.meta_path, {"name": name, "description": description, "draft": True})
-        fields = profile_form.defaults(name, description)
-        profile_form.write_files(target / "profiles" / domain_id, domain_id,
-                                 profile_form.render(domain_id, profile_form.clean(fields)))
-        _remember_form(domain, fields)
         domain.config_path.parent.mkdir(parents=True, exist_ok=True)
         domain.write_raw_config({
             "ai": ai,
-            "collection": {"time_window_hours": 24},
-            "processing": {"profiles_dir": "profiles", "default_profile": domain_id,
-                           "profile_settings": {domain_id: {"threshold": 6.5, "topic_dedup": True}}},
-            "digest": {"max_items": 10},
-            "sources": {**copy.deepcopy(_OFF_BY_DEFAULT), "rss": [], "github": []},
+            "processing": {"default_profile": domain_id},
+            "sources": copy.deepcopy(_OFF_BY_DEFAULT),
         })
         return domain
     except Exception:
@@ -128,59 +127,63 @@ def discard(domain: Domain) -> None:
 # -- editorial rules --------------------------------------------------------------
 
 
-def _remember_form(domain: Domain, fields: dict[str, Any], by_user: bool = False) -> None:
-    meta = domain.meta()
-    meta["profile_form"] = fields
-    if by_user:
-        meta["rules_saved"] = True
-    _write_json(domain.meta_path, meta)
-
-
 class HandWrittenRules(Exception):
-    """The form would overwrite profile files written outside MastHead."""
+    """The form would overwrite profile files changed outside the form."""
+
+    def __init__(self, files: list[str]):
+        super().__init__(
+            "These files were changed outside the form: " + ", ".join(files)
+            + ". Saving the form replaces them. Confirm to replace them, or edit them as text."
+        )
+        self.files = files
 
 
 def profile_dir(domain: Domain) -> Path:
-    profile_id = domain.raw_config()["processing"]["default_profile"]
+    profile_id = (domain.raw_config().get("processing") or {}).get("default_profile") or "tech-news"
     return domain.path / "profiles" / profile_id
 
 
 def profile_form_state(domain: Domain) -> dict[str, Any]:
     meta = domain.meta()
-    fields = meta.get("profile_form") or profile_form.defaults(domain.name, meta.get("description"))
+    folder = profile_dir(domain)
+    changed = profile_form.changed_by_hand(folder, meta.get("profile_files"))
+    files = profile_form.read_files(folder)
     return {
-        "fields": fields,
-        "files": profile_form.read_files(profile_dir(domain)),
-        # The form owns the files only when MastHead wrote them; otherwise they are edited as text.
-        "managed": "profile_form" in meta,
-        "saved_by_user": meta.get("rules_saved") is True,
-        "profile_id": profile_dir(domain).name,
+        "fields": meta.get("profile_form") or profile_form.empty(),
+        "files": files,
+        "exists": "profile.json" in files,  # Horizon can read the rules once its profile file is there
+        "changed_by_hand": changed,  # files the form would replace only after a confirmation
+        "managed": "profile_form" in meta and not changed,  # the form wrote them and nobody changed them since
+        "profile_id": folder.name,
     }
 
 
 def save_profile_form(domain: Domain, fields: Any, replace: bool = False) -> dict[str, Any]:
-    if "profile_form" not in domain.meta() and not replace:
-        raise HandWrittenRules(
-            "This domain's rules were written outside MastHead. Edit the files as text, "
-            "or choose to replace them with the form."
-        )
-    cleaned = profile_form.clean(fields)
+    """Write the rules from the form. A file changed by hand is replaced only with `replace`."""
     folder = profile_dir(domain)
-    profile_form.write_files(folder, folder.name, profile_form.render(folder.name, cleaned))
-    _remember_form(domain, cleaned, by_user=True)
+    changed = profile_form.changed_by_hand(folder, domain.meta().get("profile_files"))
+    if changed and not replace:
+        raise HandWrittenRules(changed)
+    cleaned = profile_form.clean(fields)
+    files = profile_form.render(folder.name, cleaned, domain.name)
+    profile_form.write_files(folder, folder.name, files)
+    meta = domain.meta()
+    meta["profile_form"] = cleaned
+    meta["profile_files"] = {name: profile_form.fingerprint(text) for name, text in files.items()}
+    _write_json(domain.meta_path, meta)
     return profile_form_state(domain)
 
 
 def save_profile_file(domain: Domain, name: Any, text: Any) -> dict[str, Any]:
+    """One file edited as text. The form asks before replacing it afterwards."""
     if name not in profile_form.TEXT_FILES:
         raise profile_form.ProfileFormError("Only match.md, analysis.md and enrichment.md can be edited here.")
-    if not isinstance(text, str) or not text.strip():
-        raise profile_form.ProfileFormError("The text cannot be empty.")
+    if not isinstance(text, str):
+        raise profile_form.ProfileFormError("The text is missing.")
     folder = profile_dir(domain)
+    if not (folder / "profile.json").is_file():
+        raise profile_form.ProfileFormError("Save the form once first: Horizon needs the profile file.")
     profile_form.write_files(folder, folder.name, {name: text})
-    meta = domain.meta()
-    meta["rules_saved"] = True
-    _write_json(domain.meta_path, meta)
     return profile_form_state(domain)
 
 
@@ -197,8 +200,10 @@ def update_subject(domain: Domain, body: dict[str, Any]) -> None:
     languages = _languages(body.get("languages"))
     description = str(body.get("description") or "").strip() or None
     raw = domain.raw_config()
-    raw.setdefault("ai", {})["languages"] = languages
-    domain.write_raw_config(raw)  # Horizon checks it first
+    ai = raw.setdefault("ai", {})
+    if languages != ai.get("languages", _HORIZON_LANGUAGES):  # unchanged: nothing written
+        ai["languages"] = languages
+        domain.write_raw_config(raw)  # Horizon checks it first
     meta = domain.meta()
     meta.update(name=name, description=description)
     _write_json(domain.meta_path, meta)
@@ -257,21 +262,24 @@ def _field(fields: dict[str, Any], key: str) -> str:
 
 
 def source_entry(kind: str, fields: dict[str, Any], profile_id: str) -> dict[str, Any]:
-    """Horizon's configuration entry for one source."""
-    common = {"enabled": True, "profile": profile_id}
+    """Horizon's configuration entry for one source: what identifies it, and the domain's profile.
+
+    Every other setting is left to Horizon's defaults. The profile ties the source to the
+    domain's rules, so Horizon does not ask the model which profile a story belongs to.
+    """
     if kind == "rss":
-        return {"name": _field(fields, "name"), "url": _field(fields, "url"), "category": "news", **common}
-    if kind == "github_repo":
-        return {"type": "repo_releases", "owner": _field(fields, "owner"), "repo": _field(fields, "repo"),
-                "category": "releases", **common}
-    if kind == "github_user":
-        return {"type": "user_events", "username": _field(fields, "username"), "category": "releases", **common}
-    if kind == "reddit_subreddit":
-        return {"subreddit": _field(fields, "subreddit").removeprefix("r/"), "sort": "top", "time_filter": "day",
-                "fetch_limit": 15, "min_score": 50, "category": "community", **common}
-    if kind == "telegram":
-        return {"channel": _field(fields, "channel").lstrip("@"), "fetch_limit": 20, "category": "community", **common}
-    raise DomainError("This kind of source is not supported. Use an RSS feed, GitHub, Reddit or Telegram.")
+        entry = {"name": _field(fields, "name"), "url": _field(fields, "url")}
+    elif kind == "github_repo":
+        entry = {"type": "repo_releases", "owner": _field(fields, "owner"), "repo": _field(fields, "repo")}
+    elif kind == "github_user":
+        entry = {"type": "user_events", "username": _field(fields, "username")}
+    elif kind == "reddit_subreddit":
+        entry = {"subreddit": _field(fields, "subreddit").removeprefix("r/")}
+    elif kind == "telegram":
+        entry = {"channel": _field(fields, "channel").lstrip("@")}
+    else:
+        raise DomainError("This kind of source is not supported. Use an RSS feed, GitHub, Reddit or Telegram.")
+    return {**entry, "profile": profile_id}
 
 
 def _identity(kind: str, entry: dict[str, Any]) -> tuple:
@@ -299,7 +307,7 @@ def _place(sources: dict[str, Any], kind: str, entry: dict[str, Any]) -> list[di
 
 def add_source(domain: Domain, kind: str, fields: dict[str, Any]) -> None:
     raw = domain.raw_config()
-    entry = source_entry(kind, fields, raw["processing"]["default_profile"])
+    entry = source_entry(kind, fields, (raw.get("processing") or {}).get("default_profile") or "tech-news")
     target = _place(raw.setdefault("sources", {}), kind, entry)
     same_kind = [item for item in target if not kind.startswith("github") or item.get("type") == entry.get("type")]
     if any(_identity(kind, item) == _identity(kind, entry) for item in same_kind):
@@ -311,10 +319,11 @@ def add_source(domain: Domain, kind: str, fields: dict[str, Any]) -> None:
 async def test_source(domain: Domain, kind: str, fields: dict[str, Any]) -> dict[str, Any]:
     """Run Horizon's collector on this source alone, over the last 7 days. Nothing is kept."""
     raw = copy.deepcopy(domain.raw_config())
-    entry = source_entry(kind, fields, raw["processing"]["default_profile"])
-    raw["sources"] = {**copy.deepcopy(_OFF_BY_DEFAULT), "rss": [], "github": []}
+    entry = source_entry(kind, fields, "")
+    entry.pop("profile")  # collecting needs no rules, so a source can be tested before they exist
+    raw["sources"] = copy.deepcopy(_OFF_BY_DEFAULT)
     _place(raw["sources"], kind, entry).append(entry)
-    raw["processing"]["profiles_dir"] = str((domain.path / "profiles").resolve())
+    raw["processing"] = {}  # Horizon's built-in profiles, since the scratch folder has none
 
     scratch = Path(tempfile.mkdtemp(prefix="masthead-source-test-"))
     try:
