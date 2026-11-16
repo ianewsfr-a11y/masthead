@@ -112,7 +112,7 @@
       section(1, 'Subject', null,
         field(M, 'nd-name', 'Name', name, 'What you follow, for example "Boating".'),
         field(M, 'nd-id', 'Short id', id, 'Lowercase letters, digits and dashes, starting with a letter. It names the folder and cannot change later.'),
-        field(M, 'nd-description', 'Description (optional)', description)),
+        field(M, 'nd-description', 'Description (optional)', description, 'One line, shown on the Domains screen. For example: “News for flight simulator pilots: aircraft, scenery, simulator updates.”')),
       section(2, 'AI', 'As in Horizon’s setup: provider, model, address, output languages.',
         ...ai.nodes,
         field(M, 'nd-languages', 'Output languages', languages, 'Codes separated by commas, such as en, fr. Each kept story is written once per language. Horizon’s setup proposes zh, en.'),
@@ -157,7 +157,7 @@
       M.h('fieldset', {}, M.h('legend', {}, 'Subject'),
         M.h('ul', { class: 'facts' }, M.fact('Short id', overview.id)),
         field(M, 'ed-name', 'Name', name),
-        field(M, 'ed-description', 'Description (optional)', description),
+        field(M, 'ed-description', 'Description (optional)', description, 'One line, shown on the Domains screen. For example: “News for flight simulator pilots: aircraft, scenery, simulator updates.”'),
         field(M, 'ed-languages', 'Languages', languages, 'Codes separated by commas, such as en, fr. Each kept story is written once per language.')),
       M.h('fieldset', {}, M.h('legend', {}, 'AI'), ...fields.nodes),
       M.h('div', { class: 'row-actions' }, save, tracker.indicator), message.area));
