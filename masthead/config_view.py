@@ -191,3 +191,64 @@ def update_settings(domain: Domain, changes: dict[str, Any]) -> None:
             raise DomainError("The time window must be a positive number of hours.")
         raw.setdefault("collection", {})["time_window_hours"] = value
     domain.write_raw_config(json.loads(json.dumps(raw)))
+
+
+def ai_choice(ai: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """Horizon's `ai` section with another provider or model. Returns a new dict.
+
+    The provider's key variable, address and Azure settings come from Horizon's
+    own defaults. Languages, temperature and the other settings are kept.
+    """
+    from urllib.parse import urlsplit
+
+    from .keys import provider as provider_info
+
+    provider_id = body.get("provider")
+    info = provider_info(provider_id) if isinstance(provider_id, str) else None
+    if info is None:
+        raise DomainError("Choose one of the providers listed.")
+    model = body.get("model")
+    if not isinstance(model, str) or not model.strip():
+        raise DomainError(
+            f"Type the name of a {info['label']} model in the Model field, "
+            f"for example {info['example_model']} (Horizon's default)."
+        )
+    if len(model.strip()) > 200:
+        raise DomainError("The model name is longer than 200 characters.")
+
+    result = dict(ai)
+    changed = result.get("provider") != provider_id
+    result["provider"] = provider_id
+    result["model"] = model.strip()
+    if changed or not result.get("api_key_env"):
+        result["api_key_env"] = info["key_env"] or ""
+    if changed:
+        result.pop("provider_chain", None)  # a chain names the previous provider
+
+    base_url = body.get("base_url")
+    if isinstance(base_url, str) and base_url.strip():
+        parts = urlsplit(base_url.strip())
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise DomainError("The address must start with http:// or https://.")
+        result["base_url"] = base_url.strip()
+    elif provider_id == "ollama":
+        result["base_url"] = info["base_url"]
+    else:
+        result.pop("base_url", None)  # Horizon then uses its own address for the provider
+
+    if provider_id == "azure":
+        if changed or not result.get("azure_endpoint_env"):
+            result["azure_endpoint_env"] = info["extra_env"][0]
+        version = body.get("api_version")
+        result["api_version"] = (version.strip() if isinstance(version, str) and version.strip()
+                                 else result.get("api_version") if not changed else None) or info["api_version"]
+    else:
+        result.pop("azure_endpoint_env", None)
+        result.pop("api_version", None)
+    return result
+
+
+def set_model(domain: Domain, body: dict[str, Any]) -> None:
+    raw = domain.raw_config()
+    raw["ai"] = ai_choice(raw.get("ai") or {}, body)
+    domain.write_raw_config(raw)

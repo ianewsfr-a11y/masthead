@@ -12,7 +12,7 @@ Ambition set by the owner: be the reference interface of its kind.
 
 - Talk to the owner (Rodolphe) in French. Code, comments, interface text, commit messages and docs are in English.
 - He delegates execution: do the setup, commands, repo and CI work yourself. Ask him only for what cannot be delegated (identity, payment, approval, a product decision).
-- API keys never go through the conversation and are never committed. He puts them himself in the domain's `.env`. Never print a key; only report whether it is present.
+- API keys never go through the conversation and are never committed. The owner enters them himself, in MastHead's interface (AI keys) or in a domain's `.env`. Never print a key; only report whether it is present. Never copy a key from one place to another.
 - Work on branches and pull requests. No direct push to `main`.
 - Development machine: Windows 11, VS Code. Use commands that work in PowerShell.
 - Say plainly what was verified and what was not. Do not report a real run as working unless it actually ran.
@@ -25,6 +25,8 @@ Ambition set by the owner: be the reference interface of its kind.
 - Decided on 14 November 2026: **local application only, for now.** Each user runs MastHead on their own computer and opens it in their browser. The user spends their own AI credit or uses a local model. Nothing leaves their machine except Horizon's own calls to sources and to the model.
 - Server mode (the same tool on the user's own VPS or NAS) is postponed: see "Ideas, not planned" after the roadmap. A hosted service run by us for all users (accounts, billing, storing customers' keys) is postponed further, until the open-source tool shows demand; do not build towards it.
 - One domain = one Horizon configuration and one data folder (own languages, model, schedule, cost).
+- Decided on 14 November 2026: the AI of each domain (provider and model) is chosen in the interface, among Horizon's providers except ChatGPT (which signs in through Horizon's own command). The model is a free text field; the example under it comes from Horizon's `AI_PROVIDER_DEFAULTS`, never from a list kept by us.
+- Decided on 14 November 2026: AI keys can be entered in the interface. One key per provider, saved in `keys.env` in MastHead's home folder and shared by every domain using that provider. A domain's `.env` overrides it; the environment MastHead was started with (a Windows variable) overrides both. A key is never shown again, never returned by the API, never logged.
 - Settings in three levels: essential (about ten), advanced (about twenty), search across all 181.
 - Visual style: dark background `#0B0E14`, panels `#121722`, lines `#263043`, amber accent `#F2A93B`, blue `#7CB8FF`, orange `#FF9D6C`. Fonts: Space Grotesk (headings), Inter (body), JetBrains Mono (figures), with local fallbacks. No remote fonts or assets.
 
@@ -41,7 +43,8 @@ Ambition set by the owner: be the reference interface of its kind.
 - `masthead/demo.py`: a run of invented stories, every title starting with `[Demo]`, pushed through Horizon's real selection.
 - `masthead/cli.py`: `masthead` (serve), `masthead import`, `masthead demo`, `masthead domains`.
 - `masthead/new_domain.py`, `masthead/new_domain_api.py`, `masthead/profile_form.py`, `masthead/static/new-domain.js`: the New domain screen (draft domain marked `"draft": true` in `domain.json`; sources tested by Horizon's collector in a scratch folder; suggestions from `src/setup/ai_recommend.py`; a form that writes Horizon's profile files, checked by Horizon's `ProfileRegistry`).
-- `masthead/env.py`: applies one domain's `.env` when its run starts, after removing the previous domain's values. `MastHeadService._build_context` skips Horizon's own `.env` loader.
+- `masthead/env.py`: applies a domain's values (shared keys, then its own `.env`) while one of its runs goes, and removes them afterwards; tells where a key comes from without reading it out. `MastHeadService._build_context` skips Horizon's own `.env` loader.
+- `masthead/keys.py`, `masthead/ai_api.py`, `masthead/static/ai-settings.js`: providers from Horizon's table, the shared keys file, and the AI keys and AI choice panels. `config_view.ai_choice` writes the `ai` section of Horizon's config.
 - `masthead/tls.py`: HTTPS certificates checked against the system store (truststore).
 
 ## Commands
@@ -78,7 +81,7 @@ python -m venv .venv
 
 ## State of the prototype
 
-Covered by tests (`tests/`, 35 tests, including 13 for New domain; no model needed; one test reaches the network): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
+Covered by tests (`tests/`, 57 tests, including 13 for New domain and 22 for AI keys and AI choice; no model needed; one test reaches the network; every test gets its own MastHead folder): demo funnel, journal consistency with Horizon's stage files, replay, partial journal for foreign runs, default sources visible, settings validation, refusal of outside requests, collect-only run, system certificate store, failed feeds counted, runs with failed sources flagged, each domain's `.env` kept to that domain.
 
 First real run, 14 November 2026, owner's virtual-flight config imported as domain `virtual-flight` (10 sources, en/zh/fr, `claude-haiku-5-5`), through the local interface:
 
@@ -91,6 +94,14 @@ Second full run, 14 November 2026, after the per-domain key fix (the key came on
 - 35 collected, 35 scored, 6 at or above 6.5, 3 after merging, 3 kept and written in 3 languages. 137,792 input and 40,346 output tokens (score 49,009/20,473; merge 1,263/280; write 87,520/19,593). 2 min 42 s.
 - Writing was 64% of the input tokens with 3 stories kept (75% with 5): its share grows with the number of stories kept.
 - Found after it: the domain's values stayed in the process after its run, so Horizon's own check counted that key for another domain and the "No AI key found" notice disappeared there. Fixed: values are removed when the run ends, and a domain's missing key is reported from its own `.env`.
+
+AI keys and AI choice, checked on 14 November 2026 in a headless browser on a scratch folder, with a fake key (no model call):
+
+- A key saved in Domains, AI keys shows as Saved; it is in `keys.env` and appeared in no page's HTML at any step.
+- Sources and settings: Anthropic with the shared key shows Key found; switching to OpenAI shows No key and the missing-key notice; Ollama fills its local address; back to Anthropic finds the shared key again.
+- New domain with DeepSeek: the draft shows its key panel; deleting the saved key removes it from the file. No console error.
+- The same AI panel (provider, model, key) is on a draft's page, under "1. Subject" ("AI and key"); checked on the owner's draft `business-school` (view only) and with a full round trip on a scratch draft (Gemini saved, key entered, suggestions enabled, key absent from the page).
+- Not checked: a real run with a key entered in the interface, or with another provider than Anthropic.
 
 New domain, checked on 14 November 2026 in a headless browser on a scratch folder, with real feeds:
 
@@ -115,7 +126,7 @@ Only what Horizon already does, shown and driven from the interface.
    2. **Sources:** added by hand, or suggested by Horizon's own recommendation function (`src/setup/ai_recommend.py`; tokens measured and shown). Every source is tested with Horizon's collector on that source alone before it can be ticked; a failing source stays unticked. Hacker News, Reddit and Telegram are switched off explicitly and shown. No automatic feed discovery from a website. No ready-made source lists for now.
    3. **Editorial rules:** a form that fills Horizon's profile files (`profile.json`, `match.md`, `analysis.md`, `enrichment.md`), shown and editable as text. No draft written by the model.
    4. **Trial run:** Collect only, then score and select without writing; the inspector and the replay to adjust the minimum score. Then create the domain or discard it (the domain is a marked draft until then).
-3. Edit model, languages and the amount of text shown to the model from the interface (Horizon settings).
+3. Edit model, languages and the amount of text shown to the model from the interface (Horizon settings). Provider and model: done 14 November 2026. Languages and the amount of text: still to do.
 4. Advanced settings level, then search across all of Horizon's settings.
 
 ## Ideas, not planned

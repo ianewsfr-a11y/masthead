@@ -194,6 +194,7 @@
       pageHead('Domains', 'One domain per subject you follow. Each has its own sources, rules, languages, model and history.',
         h('a', { class: 'btn primary', href: '#/new' }, 'New domain')),
       h('div', { class: 'cards' }, ...cards),
+      window.MastHeadAI.keysPanel(window.MastHead, await api.get('/api/ai'), viewDomains),
       panel('Bring an existing Horizon setup',
         h('p', { class: 'hint' }, 'If you already use Horizon from the command line, import its configuration from your terminal:'),
         h('pre', { class: 'cmd' }, 'masthead import --id boating --name "Boating" \\\n  --config path/to/config.json --profiles path/to/profiles'),
@@ -201,8 +202,10 @@
   }
 
   // ---------------------------------------------------------------- Sources and settings
+  let aiStatus = null;  // providers and key presence, for the AI panel; never a key
   async function viewSources() {
-    const overview = await api.get(domainPath());
+    const [overview, ai] = await Promise.all([api.get(domainPath()), api.get('/api/ai')]);
+    aiStatus = ai;
     drawSources(overview);
   }
 
@@ -211,7 +214,7 @@
     const notices = [];
     if (overview.missing_env.length) {
       notices.push(notice('No AI key found',
-        `Horizon reads it from ${overview.missing_env.join(', ')}. Export it before starting MastHead, or put it in a .env file in ${overview.folder}. Until then you can collect, but not score.`));
+        `This domain needs ${overview.missing_env.join(', ')}. Enter it in the AI panel below (it is then shared by every domain using this provider), or put it in a .env file in ${overview.folder}. Until then you can collect, but not score.`));
     }
     for (const source of overview.sources.filter((s) => s.implicit)) {
       notices.push(notice(`${source.label} is on by default`,
@@ -291,14 +294,10 @@
               h('tbody', {}, ...rows))))),
         h('div', { class: 'col-side' },
           panel('Essentials', form),
-          panel('Model',
-            h('ul', { class: 'facts' },
-              fact('Provider', settings.ai.provider),
-              fact('Model', settings.ai.model),
-              fact('Languages', settings.ai.languages.join(', ')),
-              fact('AI key', settings.ai.api_key_present ? 'found' : `not found (${settings.ai.api_key_env})`),
-              fact('Temperature', String(settings.ai.temperature))),
-            h('p', { class: 'hint' }, 'MastHead never shows or stores your key. To change the model or the languages, edit data/config.json in the domain folder for now.')),
+          window.MastHeadAI.modelPanel(window.MastHead, overview, aiStatus, (fresh, ai) => {
+            if (ai) aiStatus = ai;
+            if (fresh) drawSources(fresh); else viewSources();
+          }),
           panel('Limits per group', h('ul', { class: 'facts' }, ...limits),
             h('p', { class: 'hint' }, 'A group gathers sources. Its limit keeps one family of sources from filling the briefing.')),
           panel('Folder', h('pre', { class: 'cmd' }, overview.folder)))));

@@ -37,12 +37,17 @@ On first start MastHead creates a starter domain, `flight-sim`, in `~/.masthead/
 
 ## Your AI key
 
-MastHead never asks for a key and never shows one. Horizon reads it from the environment variable named in the domain's configuration (`ai.api_key_env`). Either export it before starting MastHead, or put it in a `.env` file in the domain folder:
+Choose each domain's AI (provider and model) in *Sources and settings*: every provider Horizon supports is listed, except ChatGPT, which signs in through Horizon's own `horizon-chatgpt` command. Ollama runs a model on your computer and needs no key.
 
-```
-~/.masthead/domains/flight-sim/.env
-ANTHROPIC_API_KEY=...
-```
+Enter a key in *Domains*, under **AI keys**. There is one key per provider, shared by every domain that uses it. It is saved in `~/.masthead/keys.env` on your computer and never shown again.
+
+The key a domain uses is chosen in this order, strongest first:
+
+1. A variable in the environment MastHead was started with (for example a Windows variable).
+2. The domain's own `.env` file (`~/.masthead/domains/<domain>/.env`).
+3. The key saved in *AI keys*.
+
+The screens only say whether a key is present and where it comes from.
 
 ## Create a domain
 

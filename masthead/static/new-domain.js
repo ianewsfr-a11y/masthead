@@ -32,24 +32,33 @@
   }
 
   // ------------------------------------------------------------ step 1: subject
-  function viewSubject(M) {
+  async function viewSubject(M, token) {
+    const status = await M.api.get('/api/ai');
+    if (!M.isCurrent(token)) return;
     const domains = M.state.domains.filter((d) => !d.draft);
     const name = M.h('input', { type: 'text', required: true, autocomplete: 'off' });
     const id = M.h('input', { type: 'text', required: true, autocomplete: 'off', class: 'mono' });
     const description = M.h('input', { type: 'text' });
     const copyFrom = M.h('select', {}, ...domains.map((d) => M.h('option', { value: d.id }, d.name)));
     const languages = M.h('input', { type: 'text', class: 'mono' });
-    const model = M.h('input', { type: 'text', class: 'mono' });
+    const first = domains[0] || {};
+    const ai = window.MastHeadAI.modelFields(M, status.providers,
+      { provider: first.provider || 'anthropic', model: first.model || '' }, 'nd-ai');
     let idEdited = false;
     name.addEventListener('input', () => { if (!idEdited) id.value = slug(name.value); });
     id.addEventListener('input', () => { idEdited = true; });
-    const fillFrom = () => {
+    const fillFrom = (initial) => {
       const source = domains.find((d) => d.id === copyFrom.value);
       languages.value = source && source.languages ? source.languages.join(', ') : 'en';
-      model.value = source && source.model ? source.model : '';
+      if (!initial && source) {
+        const select = document.getElementById('nd-ai-provider');
+        select.value = source.provider;
+        select.dispatchEvent(new Event('change'));
+        document.getElementById('nd-ai-model').value = source.model || '';
+      }
     };
-    copyFrom.addEventListener('change', fillFrom);
-    fillFrom();
+    copyFrom.addEventListener('change', () => fillFrom(false));
+    fillFrom(true);
 
     const submit = M.h('button', { type: 'submit', class: 'btn primary' }, 'Create the draft');
     const form = M.h('form', {
@@ -57,10 +66,11 @@
         event.preventDefault();
         submit.disabled = true;
         try {
+          const chosen = ai.values();
           const body = {
             id: id.value.trim(), name: name.value.trim(), description: description.value.trim(),
             languages: languages.value.split(',').map((x) => x.trim()).filter(Boolean),
-            copy_from: copyFrom.value || null, model: model.value.trim(),
+            copy_from: copyFrom.value || null, provider: chosen.provider, model: chosen.model, base_url: chosen.base_url,
           };
           const made = await M.api.post('/api/new-domain', body);
           M.openDomain(made.id, `#/new/${enc(made.id)}`);
@@ -70,9 +80,10 @@
       field(M, 'nd-name', 'Name', name, 'What you follow, for example "Boating".'),
       field(M, 'nd-id', 'Short id', id, 'Lowercase letters, digits and dashes. It names the domain folder.'),
       field(M, 'nd-description', 'Description', description, 'One line. Optional.'),
-      domains.length ? field(M, 'nd-copy', 'Model settings from', copyFrom, 'The provider, model and key name are copied. The key itself is never copied.') : null,
+      domains.length ? field(M, 'nd-copy', 'Start from the settings of', copyFrom, 'Languages, temperature and AI are copied. A key is never copied.') : null,
       field(M, 'nd-languages', 'Languages', languages, 'Codes separated by commas, such as en, fr. Each kept story is written once per language.'),
-      field(M, 'nd-model', 'Model', model, 'As your provider names it.'),
+      ...ai.nodes,
+      M.h('p', { class: 'hint' }, 'The key of the provider is entered on the next screen, or in Domains, AI keys. Collect only and source tests need no key.'),
       M.h('div', {}, submit));
 
     M.show(
@@ -371,7 +382,8 @@
     M.state.domain = domainId;
     M.store.set(domainId);
     const base = `/api/domains/${enc(domainId)}`;
-    const [overview, rules] = await Promise.all([M.api.get(base), M.api.get(`${base}/profile-form`)]);
+    const [overview, rules, status] = await Promise.all(
+      [M.api.get(base), M.api.get(`${base}/profile-form`), M.api.get('/api/ai')]);
     if (!M.isCurrent(token)) return;
     if (!overview.draft) {
       M.show(M.pageHead(overview.name, 'This domain is already created.'),
@@ -385,15 +397,13 @@
     }
     listHolder.replaceChildren(sourcesList(M, domainId, overview, refreshSources));
     const ai = overview.settings.ai;
-    const keyFact = ai.api_key_present ? 'found' : `not found (${ai.api_key_env})`;
+    const redraw = () => viewDraft(M, domainId, M.state.token);
 
     M.show(
       M.pageHead(`New domain: ${overview.name}`, 'A draft until you create it. Steps 2 to 4 can be done in any order and repeated.'),
-      ai.api_key_present ? null : M.notice('No AI key for this domain yet',
-        `Put ${ai.api_key_env}=... in a .env file in ${overview.folder}. MastHead never asks for it and never shows it. You can test and add sources without it.`),
       M.panel('1. Subject', M.h('ul', { class: 'facts' },
-        M.fact('Name', overview.name), M.fact('Id', overview.id), M.fact('Languages', ai.languages.join(', ')),
-        M.fact('Model', `${ai.provider} · ${ai.model}`), M.fact('AI key', keyFact))),
+        M.fact('Name', overview.name), M.fact('Id', overview.id), M.fact('Languages', ai.languages.join(', ')))),
+      window.MastHeadAI.modelPanel(M, overview, status, redraw, 'AI and key'),
       M.panel('2. Sources',
         M.h('p', { class: 'hint' }, 'Hacker News, Reddit and Telegram are read by Horizon unless switched off: this draft switches them off until you add a subreddit or a channel.'),
         listHolder, manualAdd(M, domainId, refreshSources), suggestions(M, domainId, overview, refreshSources)),
@@ -405,7 +415,7 @@
   window.MastHeadNewDomain = {
     view: (domainId, token) => {
       const M = window.MastHead;
-      return domainId ? viewDraft(M, domainId, token) : viewSubject(M);
+      return domainId ? viewDraft(M, domainId, token) : viewSubject(M, token);
     },
   };
 })();
