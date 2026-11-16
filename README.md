@@ -1,6 +1,6 @@
 # MastHead for Horizon
 
-A local web console for [Horizon](https://github.com/Thysrael/Horizon), the open-source AI news radar.
+A local web console for [Horizon](https://github.com/Thysrael/Horizon), the open-source AI news radar. Published by Ergonia, under the MIT licence. MastHead is an independent project, not made by Horizon's author.
 
 MastHead runs on your computer. Your sources, your AI key or your local model: nothing leaves your machine except the calls Horizon itself makes to the sources and to the model you chose.
 
@@ -20,7 +20,7 @@ MastHead runs on your computer. Your sources, your AI key or your local model: n
 Requires Python 3.11 or later.
 
 ```bash
-pip install git+https://github.com/<owner>/masthead   # not published yet
+pip install git+https://github.com/ianewsfr-a11y/masthead
 masthead
 ```
 
@@ -97,4 +97,4 @@ pytest
 
 ## Licence
 
-MIT (`LICENSE`). Horizon's preset file in `masthead/presets/` is Horizon's, under its own MIT licence. To propose a preset list or a change, see `CONTRIBUTING.md`.
+MIT (`LICENSE`), Copyright (c) 2026 Ergonia. Horizon's preset file in `masthead/presets/` is Horizon's, under its own MIT licence. To propose a preset list or a change, see `CONTRIBUTING.md`.

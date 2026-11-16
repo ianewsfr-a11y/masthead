@@ -10,7 +10,7 @@ Ambition set by the owner: be the reference interface of its kind.
 
 ## Working rules
 
-- Talk to the owner (Rodolphe) in French. Code, comments, interface text, commit messages and docs are in English.
+- Talk to the owner in French. Code, comments, interface text, commit messages and docs are in English.
 - He delegates execution: do the setup, commands, repo and CI work yourself. Ask him only for what cannot be delegated (identity, payment, approval, a product decision).
 - API keys never go through the conversation and are never committed. The owner enters them himself, in MastHead's interface (AI keys) or in a domain's `.env`. Never print a key; only report whether it is present. Never copy a key from one place to another.
 - Work on branches and pull requests. No direct push to `main`.
@@ -199,9 +199,14 @@ Outside the first rule: not built unless the owner asks.
 - Automatic feed discovery from a website; a draft of the editorial rules written by the model.
 - Server mode: the same tool on the user's own VPS or NAS, with sign-in, HTTPS through Caddy and scheduled runs. Requirements, plan and state in `docs/server-mode-plan.md`. A first implementation sits on the branch `feat/server-mode` (pull request #2, draft, not merged); do not merge it and do not build on it until the owner resumes this work. Local mode must never lose its loopback-only protection.
 
+## Publication (decided by the owner on 16 November 2026)
+
+- Published under the name **Ergonia**: copyright holder in `LICENSE`, licence MIT.
+- Public repository: https://github.com/ianewsfr-a11y/masthead (the account `ianewsfr-a11y`).
+- The name "MastHead" was checked by the owner and is clear to use. No domain name of its own for now; if one is needed, it goes under Ergonia's domain.
+- Horizon's author may be contacted (approved). Done on GitHub, see "State of the prototype".
+- The public files hold no secret and no personal detail of the owner: keep it that way (no name, no user path, no key). One past commit holds a Windows user path in `docs/horizon-setup-plan.md`; history was not rewritten.
+
 ## Open decisions (ask the owner, do not decide)
 
-- GitHub account for the public repository: existing organisation or a dedicated one.
-- Copyright holder in `LICENSE`: written as "the MastHead contributors" until the owner names it (his name, or the account or organisation that publishes the repository).
-- When to contact Horizon's author.
-- Trademark and domain name for "MastHead": nothing has been checked.
+- Nothing open at the moment.
