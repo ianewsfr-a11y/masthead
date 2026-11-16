@@ -1,6 +1,6 @@
 # Plan: create a domain from Horizon's own setup
 
-Status: **proposal, waiting for the owner's approval.** No code has been written for it.
+Status: **approved on 16 November 2026 and built** on the branch `feat/horizon-setup`. The owner's answers: D1 (a) as Horizon, the whole model; D2 (a) no presets; D3 (b) nothing pre-filled; D4 (a) adding by hand kept; D5 (a) Horizon's profiles, form removed; D6 (a) Horizon's classification.
 
 Date: 16 November 2026.
 

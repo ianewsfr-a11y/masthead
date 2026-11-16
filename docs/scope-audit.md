@@ -369,6 +369,18 @@ The six required texts and the five score levels of the form are no longer requi
 
 ---
 
+### Update after Horizon's setup (branch `feat/horizon-setup`, 16 November 2026)
+
+The creation of a domain now goes through Horizon's own setup (`docs/horizon-setup-plan.md`). What changes in the lists above:
+
+- Gone: the rules form and its fields, `domain.json` `profile_form` and `profile_files`, the `summary` block and `history_search` written by MastHead, the empty `match.md`, the Ollama address pre-filled.
+- The whole configuration is written by Horizon's `save_config`, defaults included (owner's decision D1); it no longer counts as "written without being typed".
+- `match.md` is read again in every new domain: sources name no profile, so Horizon's model classifies each story (category 1).
+- Remaining category 3: `domain.json` `name`, `description`, `draft`, `pricing`; `keys.env`. Category 5: "Minimum score" and "Use this score from now on" (same key, same profile).
+- Required by MastHead and not by Horizon: a name, at least one output language, and one source on to create the domain. Horizon's setup asks for languages too, with `zh,en` proposed.
+
+---
+
 ## Totals (`main`)
 
 | Class | Count | Rows |

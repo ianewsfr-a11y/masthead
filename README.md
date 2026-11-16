@@ -51,9 +51,9 @@ The screens only say whether a key is present and where it comes from.
 
 ## Create or edit a domain
 
-In *Domains*, press **New domain**, then give a name, languages and the AI. The domain stays a draft until you create it. A domain already created opens in the same editor with **Edit domain**.
+In *Domains*, press **New domain**. The page follows Horizon's own setup (`horizon-wizard`): the AI and the output languages, what the domain should follow (Horizon can suggest sources with your model), then the sources to tick. Nothing is pre-filled. Horizon then writes the configuration exactly as its setup does. The domain stays a draft until you create it. A domain already created opens in an editor with **Edit domain**.
 
-MastHead writes only what you type. The one exception: Hacker News, Reddit and Telegram, which Horizon reads unless told otherwise, are switched off in a new domain, and shown as off.
+As in Horizon's setup, Hacker News, Reddit and Telegram are read only when chosen; with no source at all, Horizon switches Hacker News on.
 
 The editor shows one step at a time, with the steps on the side and what is missing at the top:
 
@@ -62,11 +62,7 @@ The editor shows one step at a time, with the steps on the side and what is miss
    - Paste one or many lines: a feed address, `github.com/owner/repository`, `r/subreddit` or `t.me/channel`.
    - Each line is tested with Horizon's own collector over the last 7 days. Tick the ones to add.
    - Horizon can also suggest sources; this uses your model, and the tokens are shown.
-3. **Editorial rules:**
-   - A form that starts empty, with examples under each field: how the model scores a story, and what it writes for each kept story. Nothing is written before you save, and nothing is added to what you type.
-   - Or the profile files themselves, as text. `match.md` is only there: Horizon reads it to choose a profile when a source names none, and the sources added in MastHead always name the domain's profile.
-   - A file changed outside the form is never replaced by the form without a confirmation that names it.
-   - Horizon needs the rules before any run, even *Collect only*.
+3. **Editorial rules:** a new domain uses Horizon's built-in profiles (technology, finance, AI creators), and Horizon's model chooses the profile of each story. **Customize the profiles** copies them into the domain; you then edit their files as text, each checked by Horizon before it is kept.
 4. **Settings:** minimum score, stories per briefing, time window.
 5. **Trial run:** *Collect only* calls no model; *Score and select* scores with the model but writes nothing. Open the run in the inspector.
 
