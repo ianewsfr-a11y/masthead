@@ -87,7 +87,7 @@ Each step has its own **Save** button and says when it has unsaved changes. Movi
 *Search the presets* (New domain, and the Sources step of the editor) finds ready-made sources matching the words you type, with no model call. Three lists are searched, in this order:
 
 1. yours, the `.json` files in `~/.masthead/presets/`;
-2. the lists that come with MastHead, such as *Flight simulation* and *Finance*;
+2. the lists that come with MastHead, such as *Flight simulation*, *Finance* and *Business schools in Europe*;
 3. Horizon's own library (technology themes), copied from Horizon.
 
 To share a domain's sources, open the domain, step *Sources*, *Share these sources as a preset list*: give a theme and keywords. The file is written to `~/.masthead/presets/` and can be downloaded; whoever drops it in their own `presets` folder finds it in the search. The format is Horizon's own (`data/presets.json`).
