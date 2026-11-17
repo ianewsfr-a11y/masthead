@@ -51,3 +51,20 @@ def test_theme_ids_are_unique_across_the_lists():
 
 def test_horizons_own_file_is_read_too():
     assert _check_list(json.loads(HORIZON_FILE.read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize("words", ["finance", "banque centrale", "金融"])
+def test_the_finance_list_is_found_in_english_french_and_chinese(words, tmp_path, monkeypatch):
+    from masthead.preset_lists import matches
+
+    monkeypatch.setenv("MASTHEAD_HOME", str(tmp_path))
+    themes = {s["theme"] for s in matches(words)["suggestions"]}
+    assert "Finance (MastHead)" in themes
+
+
+def test_marketing_does_not_match_the_finance_list(tmp_path, monkeypatch):
+    from masthead.preset_lists import matches
+
+    monkeypatch.setenv("MASTHEAD_HOME", str(tmp_path))
+    themes = {s["theme"] for s in matches("marketing")["suggestions"]}
+    assert "Finance (MastHead)" not in themes

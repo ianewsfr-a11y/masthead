@@ -1,0 +1,296 @@
+{
+  "domains": [
+    {
+      "id": "finance",
+      "name": "Finance",
+      "name_zh": "金融财经",
+      "keywords": [
+        "finance",
+        "financial",
+        "financial news",
+        "markets",
+        "stock market",
+        "stocks",
+        "equities",
+        "bonds",
+        "currencies",
+        "forex",
+        "commodities",
+        "economy",
+        "economics",
+        "macroeconomics",
+        "central bank",
+        "federal reserve",
+        "monetary policy",
+        "interest rates",
+        "inflation",
+        "earnings",
+        "mergers",
+        "acquisitions",
+        "investing",
+        "investment",
+        "banking",
+        "financial regulation",
+        "bourse",
+        "marchés financiers",
+        "économie",
+        "banque centrale",
+        "politique monétaire",
+        "taux d'intérêt",
+        "investissement",
+        "金融",
+        "财经",
+        "经济",
+        "股市",
+        "央行"
+      ],
+      "sources": [
+        {
+          "type": "rss",
+          "description": "Monetary policy decisions, statements and data releases of the US Federal Reserve",
+          "tags": [
+            "central bank",
+            "rates",
+            "official",
+            "us"
+          ],
+          "config": {
+            "name": "Federal Reserve press releases",
+            "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+            "category": "central-bank"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Monetary policy decisions and press releases of the European Central Bank",
+          "tags": [
+            "central bank",
+            "rates",
+            "official",
+            "europe"
+          ],
+          "config": {
+            "name": "ECB press releases",
+            "url": "https://www.ecb.europa.eu/rss/press.html",
+            "category": "central-bank"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "News and policy announcements of the Bank of England",
+          "tags": [
+            "central bank",
+            "rates",
+            "official",
+            "uk"
+          ],
+          "config": {
+            "name": "Bank of England news",
+            "url": "https://www.bankofengland.co.uk/rss/news",
+            "category": "central-bank"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Speeches by central bank governors and officials, collected by the Bank for International Settlements",
+          "tags": [
+            "central bank",
+            "official"
+          ],
+          "config": {
+            "name": "BIS central bankers' speeches",
+            "url": "https://www.bis.org/doclist/cbspeeches.rss",
+            "category": "central-bank"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Enforcement actions, rules and announcements of the US Securities and Exchange Commission",
+          "tags": [
+            "regulation",
+            "official",
+            "us"
+          ],
+          "config": {
+            "name": "SEC press releases",
+            "url": "https://www.sec.gov/news/pressreleases.rss",
+            "category": "regulator"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Markets, banks and company finance news",
+          "tags": [
+            "markets",
+            "press"
+          ],
+          "config": {
+            "name": "CNBC Finance",
+            "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Economic data and policy news",
+          "tags": [
+            "macro",
+            "press"
+          ],
+          "config": {
+            "name": "CNBC Economy",
+            "url": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Market and business news",
+          "tags": [
+            "markets",
+            "press"
+          ],
+          "config": {
+            "name": "MarketWatch top stories",
+            "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Market news from Bloomberg",
+          "tags": [
+            "markets",
+            "press"
+          ],
+          "config": {
+            "name": "Bloomberg Markets",
+            "url": "https://feeds.bloomberg.com/markets/news.rss",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Markets coverage of the Financial Times (some articles are paywalled)",
+          "tags": [
+            "markets",
+            "press",
+            "paywall"
+          ],
+          "config": {
+            "name": "Financial Times: Markets",
+            "url": "https://www.ft.com/markets?format=rss",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Finance and economics section of The Economist (some articles are paywalled)",
+          "tags": [
+            "macro",
+            "press",
+            "paywall"
+          ],
+          "config": {
+            "name": "The Economist: Finance and economics",
+            "url": "https://www.economist.com/finance-and-economics/rss.xml",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Market news: stocks, currencies, commodities",
+          "tags": [
+            "markets",
+            "press"
+          ],
+          "config": {
+            "name": "Investing.com news",
+            "url": "https://www.investing.com/rss/news.rss",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Economy section of Le Monde, in French",
+          "tags": [
+            "macro",
+            "press",
+            "french"
+          ],
+          "config": {
+            "name": "Le Monde: Economie",
+            "url": "https://www.lemonde.fr/economie/rss_full.xml",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Economy section of Le Figaro, in French",
+          "tags": [
+            "markets",
+            "press",
+            "french"
+          ],
+          "config": {
+            "name": "Le Figaro: Economie",
+            "url": "https://www.lefigaro.fr/rss/figaro_economie.xml",
+            "category": "press"
+          }
+        },
+        {
+          "type": "reddit_subreddit",
+          "description": "Reddit community r/finance: finance news and discussion",
+          "tags": [
+            "community"
+          ],
+          "config": {
+            "subreddit": "finance",
+            "sort": "top",
+            "fetch_limit": 15,
+            "min_score": 50
+          }
+        },
+        {
+          "type": "reddit_subreddit",
+          "description": "Reddit community r/economics: economics news and discussion",
+          "tags": [
+            "community"
+          ],
+          "config": {
+            "subreddit": "economics",
+            "sort": "top",
+            "fetch_limit": 15,
+            "min_score": 100
+          }
+        },
+        {
+          "type": "reddit_subreddit",
+          "description": "Reddit community r/investing: investing discussion",
+          "tags": [
+            "community"
+          ],
+          "config": {
+            "subreddit": "investing",
+            "sort": "top",
+            "fetch_limit": 15,
+            "min_score": 100
+          }
+        },
+        {
+          "type": "reddit_subreddit",
+          "description": "Reddit community r/SecurityAnalysis: fundamental analysis of companies",
+          "tags": [
+            "community"
+          ],
+          "config": {
+            "subreddit": "SecurityAnalysis",
+            "sort": "top",
+            "fetch_limit": 15,
+            "min_score": 20
+          }
+        }
+      ]
+    }
+  ]
+}
