@@ -1,0 +1,200 @@
+{
+  "domains": [
+    {
+      "id": "business-schools-europe",
+      "name": "Business schools in Europe",
+      "name_zh": "欧洲商学院",
+      "keywords": [
+        "business school",
+        "business schools",
+        "business education",
+        "management education",
+        "executive education",
+        "mba",
+        "école de commerce",
+        "écoles de commerce",
+        "grande école",
+        "grandes écoles",
+        "escuela de negocios",
+        "escuelas de negocios",
+        "wirtschaftshochschule",
+        "商学院"
+      ],
+      "sources": [
+        {
+          "type": "rss",
+          "description": "Business school news, rankings and MBA coverage of the Financial Times (some articles are paywalled)",
+          "tags": [
+            "press",
+            "rankings",
+            "paywall"
+          ],
+          "config": {
+            "name": "Financial Times: Business education",
+            "url": "https://www.ft.com/business-education?format=rss",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "MBA and business school news, admissions and rankings, worldwide",
+          "tags": [
+            "press",
+            "mba"
+          ],
+          "config": {
+            "name": "Poets&Quants",
+            "url": "https://poetsandquants.com/feed/",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "MBA admissions news and school deadlines, mostly US and European schools",
+          "tags": [
+            "mba",
+            "admissions"
+          ],
+          "config": {
+            "name": "Clear Admit",
+            "url": "https://www.clearadmit.com/feed/",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "News and research of Cambridge Judge Business School",
+          "tags": [
+            "school",
+            "uk"
+          ],
+          "config": {
+            "name": "Cambridge Judge Business School news",
+            "url": "https://www.jbs.cam.ac.uk/feed/",
+            "category": "school"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "News of Rotterdam School of Management, Erasmus University",
+          "tags": [
+            "school",
+            "netherlands"
+          ],
+          "config": {
+            "name": "Rotterdam School of Management news",
+            "url": "https://www.rsm.nl/news/eur-news.xml?tx_eurnews%5Baction%5D=feed&tx_eurnews%5Bcontroller%5D=Article&cHash=3ba18df5d962cdefdbddc95c25c801ca",
+            "category": "school"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Google News search for INSEAD, HEC Paris, London Business School, IESE, ESADE, ESSEC and IMD",
+          "tags": [
+            "search",
+            "schools"
+          ],
+          "config": {
+            "name": "Google News: leading European business schools",
+            "url": "https://news.google.com/rss/search?q=%28INSEAD+OR+%22HEC+Paris%22+OR+%22London+Business+School%22+OR+IESE+OR+ESADE+OR+ESSEC+OR+IMD%29+%22business+school%22&hl=en-GB&gl=GB&ceid=GB:en",
+            "category": "search"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Google News search for \"business school\", UK English edition (broad, includes schools outside Europe)",
+          "tags": [
+            "search",
+            "broad"
+          ],
+          "config": {
+            "name": "Google News: business school (UK edition)",
+            "url": "https://news.google.com/rss/search?q=%22business+school%22+when%3A7d&hl=en-GB&gl=GB&ceid=GB:en",
+            "category": "search"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Google News search for MBA rankings in Europe",
+          "tags": [
+            "search",
+            "rankings",
+            "mba"
+          ],
+          "config": {
+            "name": "Google News: MBA rankings in Europe",
+            "url": "https://news.google.com/rss/search?q=MBA+Europe+ranking&hl=en-GB&gl=GB&ceid=GB:en",
+            "category": "search"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Google News search for French business schools (écoles de commerce), in French",
+          "tags": [
+            "search",
+            "french"
+          ],
+          "config": {
+            "name": "Google News: écoles de commerce",
+            "url": "https://news.google.com/rss/search?q=%22%C3%A9cole+de+commerce%22+OR+%22%C3%A9coles+de+commerce%22&hl=fr&gl=FR&ceid=FR:fr",
+            "category": "search"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Google News search for business schools, German edition",
+          "tags": [
+            "search",
+            "german"
+          ],
+          "config": {
+            "name": "Google News: Business School (Deutschland)",
+            "url": "https://news.google.com/rss/search?q=%22Business+School%22&hl=de&gl=DE&ceid=DE:de",
+            "category": "search"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Google News search for business schools (escuelas de negocios), Spanish edition",
+          "tags": [
+            "search",
+            "spanish"
+          ],
+          "config": {
+            "name": "Google News: escuelas de negocios",
+            "url": "https://news.google.com/rss/search?q=%22escuela+de+negocios%22&hl=es&gl=ES&ceid=ES:es",
+            "category": "search"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "Higher education section of Le Monde, in French",
+          "tags": [
+            "press",
+            "higher education",
+            "french"
+          ],
+          "config": {
+            "name": "Le Monde: Campus",
+            "url": "https://www.lemonde.fr/campus/rss_full.xml",
+            "category": "press"
+          }
+        },
+        {
+          "type": "rss",
+          "description": "French student news: schools, admissions, rankings (broad)",
+          "tags": [
+            "press",
+            "french",
+            "broad"
+          ],
+          "config": {
+            "name": "L'Etudiant",
+            "url": "https://www.letudiant.fr/rss.xml",
+            "category": "press"
+          }
+        }
+      ]
+    }
+  ]
+}
