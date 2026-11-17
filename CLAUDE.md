@@ -55,6 +55,7 @@ Ambition set by the owner: be the reference interface of its kind.
 - `masthead/keys.py`, `masthead/ai_api.py`, `masthead/static/ai-settings.js`: providers from Horizon's table, the shared keys file, and the AI keys and AI choice panels. `config_view.ai_choice` writes the `ai` section of Horizon's config.
 - `masthead/preset_lists.py`, `masthead/presets/`: the preset lists (reading, checking each source as Horizon's setup would build it, matching with Horizon's `match_sources`, sharing a domain as a list). `masthead/presets/horizon-presets.json` is Horizon's own file, copied at the pinned commit (MIT).
 - `masthead/tls.py`: HTTPS certificates checked against the system store (truststore).
+- `static/run-progress.js` with `service.ScoringProgress`: while Horizon scores, each story it has finished (the count of its own terminal progress bar, then the story's profile, score and reason) is shown on the Runs page and in the trial run, with the measured pace and an estimate of the time left marked as such. `_ObservedAnalyzer` is Horizon's `ContentAnalyzer` reporting after Horizon's own retries; `_RecordingOrchestrator.analyze_items` mirrors Horizon's six lines to use it. Nothing is saved: Horizon's `scored_items.json` stays the record.
 
 ## Commands
 
@@ -97,6 +98,8 @@ python -m venv .venv
 - Prompt overrides copied over Horizon's files (such as the owner's `overrides/deduplication.py` in virtual-flight) do not apply in MastHead, which uses the installed Horizon. Decided on 14 November 2026: MastHead will not support Python overrides. The right form would be a per-domain text setting for the duplicate-merging rules; it is under "Ideas, not planned".
 
 ## Known machine traps
+
+- Ollama on the owner's PC (17 November 2026): the Windows variable `OLLAMA_HOST=0.0.0.0:11434` tells Ollama to listen everywhere, and Horizon reads the same variable as the address to call, which fails ("Connection error"). The domain's AI address must be typed (`http://localhost:11434`). Ollama's default context is 4,096 tokens; `qwen3.5:9b` reasons before answering and filled it on some stories (`truncated = 1` in Ollama's log), which Horizon records as "Analysis response parse failed". Measured: about 2 minutes per story (classification and scoring) on the first trial.
 
 - HTTPS inspection by an antivirus (Norton Web/Mail Shield on the owner's PC) or a company proxy re-signs connections with a root that only the system store trusts. Python's certifi rejects it: every feed and the model API fail with `CERTIFICATE_VERIFY_FAILED`. MastHead injects `truststore` at startup (`masthead/tls.py`) so verification uses the system store. Verification is never turned off.
 

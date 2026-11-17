@@ -246,11 +246,16 @@
 
   function watchJob(job, holder) {
     clearInterval(state.poll);
+    const steps = h('div', {});
+    const progress = window.MastHeadProgress.scoring(window.MastHead);
+    holder.replaceChildren(panel('Run in progress',
+      h('p', { class: 'hint' }, 'You can leave this page: the run continues as long as MastHead is running in your terminal.'),
+      steps,
+      h('div', {}, h('button', { type: 'button', class: 'btn', onclick: async () => { try { await api.post(`/api/jobs/${job.id}/cancel`); } catch (error) { toast(error.message, true); } } }, 'Stop the run')),
+      progress.el));
     const draw = (current) => {
-      holder.replaceChildren(panel('Run in progress',
-        h('p', { class: 'hint' }, 'You can leave this page: the run continues as long as MastHead is running in your terminal.'),
-        stepsList(current),
-        h('div', {}, h('button', { type: 'button', class: 'btn', onclick: async () => { try { await api.post(`/api/jobs/${current.id}/cancel`); } catch (error) { toast(error.message, true); } } }, 'Stop the run'))));
+      steps.replaceChildren(stepsList(current));
+      progress.update(current);
     };
     draw(job);
     const token = state.token;

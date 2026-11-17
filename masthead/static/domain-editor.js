@@ -263,17 +263,22 @@
         : !key ? 'Collect only works now. Score and select needs the key of the AI (step Subject and AI).'
           : 'Collect only calls no model. Score and select uses the model to score; nothing is written and no briefing is produced.';
     }
+    const progressHolder = M.h('div', {});
     async function start(until) {
       collect.disabled = true;
       score.disabled = true;
+      const progress = window.MastHeadProgress.scoring(M);
+      progressHolder.replaceChildren(progress.el);
       try {
         let job = await M.api.post(`/api/domains/${enc(ctx.domainId)}/runs`, { until });
         while (job.status === 'running') {
           out.replaceChildren(stages(M, job));
+          progress.update(job);
           await new Promise((resolve) => setTimeout(resolve, 1500));
           if (!M.isCurrent(ctx.token)) return;
           job = await M.api.get(`/api/jobs/${enc(job.id)}`);
         }
+        progress.update(job);
         out.replaceChildren(...[stages(M, job),
           job.error ? M.notice('The trial stopped', job.error) : null,
           job.run_id ? M.h('div', {}, M.h('button', {
@@ -285,7 +290,7 @@
     collect.addEventListener('click', () => start('collect'));
     score.addEventListener('click', () => start('select'));
     gate(ctx.overview);
-    return { redraw: gate, body: [reason, M.h('div', { class: 'row-actions' }, collect, score), out] };
+    return { redraw: gate, body: [reason, M.h('div', { class: 'row-actions' }, collect, score), out, progressHolder] };
   }
 
   function stages(M, job) {

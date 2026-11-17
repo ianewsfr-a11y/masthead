@@ -1,23 +1,28 @@
 """MastHead's service: Horizon's staged pipeline, plus the decision journal.
 
 MastHead does not copy Horizon's engine. It subclasses the service Horizon ships
-for assistants (src/mcp/service.py) and adds three things:
+for assistants (src/mcp/service.py) and adds four things:
 
 - every call is bound to one domain (its own config, profiles, data and runs);
 - the model's answer to the duplicate-merging question is recorded, so the
   journal can say which story each duplicate merged into;
 - a replay that recomputes the selection with another minimum score without
-  calling the model and without touching the run's files.
+  calling the model and without touching the run's files;
+- while Horizon scores, each story it has finished (the count its own progress
+  bar shows in a terminal), so the interface can show the scoring as it goes.
 """
 
 from __future__ import annotations
 
+import time
 from functools import cached_property
 from pathlib import Path
 from typing import Any, Callable
 
 from rich.console import Console
 
+from src.ai.analyzer import ContentAnalyzer
+from src.ai.errors import AIProviderUnavailableError
 from src.ai.prompting.deduplication import TOPIC_DEDUP_SYSTEM
 from src.ai.utils import parse_json_response
 from src.mcp.errors import HorizonMcpError
@@ -30,6 +35,7 @@ from src.mcp.horizon_adapter import (
     resolve_horizon_path,
 )
 from src.mcp.service import HorizonPipelineService, PipelineContext
+from src.models import ContentItem
 from src.orchestrator import HorizonOrchestrator
 
 from . import journal as jn
@@ -41,10 +47,26 @@ JOURNAL_FILE = "masthead_decisions.json"
 class _RecordingOrchestrator(HorizonOrchestrator):
     """Horizon's orchestrator, with the duplicate-merging answers written down."""
 
-    def __init__(self, *args: Any, recorder: list, client_factory: Callable | None = None, **kwargs: Any):
+    def __init__(self, *args: Any, recorder: list, client_factory: Callable | None = None,
+                 progress: "ScoringProgress | None" = None, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self._recorder = recorder
         self._client_factory = client_factory
+        self._progress = progress
+
+    async def analyze_items(self, items: list[ContentItem]) -> list[ContentItem]:  # type: ignore[override]
+        """Horizon's analyze_items (src/orchestrator.py), with an analyzer that reports each story."""
+        if self._progress is None:
+            return await super().analyze_items(items)
+        self.console.print(f"{self.icons['ai']} Analyzing content with AI...")
+        self._progress.start(len(items))
+        analyzer = _ObservedAnalyzer(
+            self.ai_client, self.profiles, console=self.console,
+            concurrency=self.config.ai.analysis_concurrency,
+            throttle_sec=self.config.ai.throttle_sec,
+            progress=self._progress,
+        )
+        return await analyzer.analyze_batch(items)
 
     @cached_property
     def ai_client(self):  # type: ignore[override]
@@ -65,6 +87,60 @@ class _RecordingOrchestrator(HorizonOrchestrator):
         return client
 
 
+class ScoringProgress:
+    """What Horizon's analyzer has finished so far: the count its own progress bar shows in a
+    terminal, and each story's profile, score and reason as soon as Horizon sets them.
+
+    `state` is one plain dict updated in place, so a job can carry it as it is.
+    """
+
+    def __init__(self) -> None:
+        self.state: dict[str, Any] = {"total": 0, "done": 0, "failed": 0, "seconds": 0.0, "items": []}
+        self._started = time.monotonic()
+
+    def start(self, total: int) -> None:
+        self.state.update(total=total, done=0, failed=0, seconds=0.0, items=[])
+        self._started = time.monotonic()
+
+    def finished(self, item: ContentItem, failed: bool) -> None:
+        processing = item.processing
+        analysis = processing.analysis if processing else None
+        classification = processing.classification if processing else None
+        failed = failed or analysis is None or analysis.score is None
+        self.state["items"].append({
+            "id": item.id,
+            "title": item.title,
+            "url": str(item.url),
+            "source": jn.source_label(item.model_dump(mode="json")),
+            "profile": classification.profile if classification else None,
+            "score": None if failed else analysis.score,
+            "reason": analysis.reason if analysis else None,
+            "failed": failed,
+        })
+        self.state["done"] += 1
+        self.state["failed"] += failed
+        self.state["seconds"] = round(time.monotonic() - self._started, 1)
+
+
+class _ObservedAnalyzer(ContentAnalyzer):
+    """Horizon's analyzer, telling MastHead about each story once Horizon has finished it."""
+
+    def __init__(self, *args: Any, progress: ScoringProgress, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self._progress = progress
+
+    async def _analyze_item(self, item: ContentItem) -> None:
+        try:
+            await super()._analyze_item(item)  # Horizon's own retries happen inside
+        except AIProviderUnavailableError:
+            raise
+        except Exception:
+            # Horizon then records "Analysis failed" for this story and carries on.
+            self._progress.finished(item, failed=True)
+            raise
+        self._progress.finished(item, failed=False)
+
+
 class MastHeadService(HorizonPipelineService):
     """Horizon's pipeline service bound to one domain."""
 
@@ -74,6 +150,7 @@ class MastHeadService(HorizonPipelineService):
         self.workspace = str(domain.path)
         self._client_factory = client_factory
         self._dedup_calls: list[tuple[str, Any]] = []
+        self.scoring = ScoringProgress()
 
     # -- Horizon hooks ---------------------------------------------------
 
@@ -85,6 +162,7 @@ class MastHeadService(HorizonPipelineService):
             profiles=self._profiles(ctx),
             recorder=self._dedup_calls,
             client_factory=self._client_factory,
+            progress=self.scoring,
         )
 
     def _build_context(  # type: ignore[override]

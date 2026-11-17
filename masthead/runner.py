@@ -165,6 +165,8 @@ class RunManager:
             elif fetched["fetched"] == 0:
                 stop_here("Nothing was published in this time window, so there is nothing to score.")
             elif job["until"] != "collect":
+                # Filled in place as Horizon finishes each story, so the job shows the scoring as it goes.
+                stage_of["score"]["progress"] = service.scoring.state
                 scored = await self._stage(job, "score", lambda: service.score_items(
                     run_id=job["run_id"], horizon_path=workspace))
                 stage_of["score"]["detail"] = f"{scored['scored']} scored"
