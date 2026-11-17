@@ -112,10 +112,30 @@ def source_item(value: Any) -> dict[str, Any]:
     return {"type": kind, "config": config}
 
 
+def _identity(source: dict[str, Any]) -> tuple[str, ...]:
+    """What makes two sources the same one: a feed's address, otherwise the fields that name it."""
+    kind, config = source["type"], source["config"]
+    if kind == "rss":
+        return (kind, config["url"].rstrip("/").lower())
+    return (kind, *(str(config[key]).lower() for key in SOURCE_TYPES[kind]))
+
+
+def unique_sources(items: list[Any]) -> list[dict[str, Any]]:
+    """The sources in order, each once: the first copy is kept, as Horizon's preset matching does."""
+    seen: set[tuple[str, ...]] = set()
+    result = []
+    for item in items:
+        source = source_item(item)
+        if _identity(source) not in seen:
+            seen.add(_identity(source))
+            result.append(source)
+    return result
+
+
 def build(ai: AIConfig, items: list[Any]) -> Config:
-    """Horizon's build_config on these answers."""
+    """Horizon's build_config on these answers. Horizon keeps a source given twice, so it is given once."""
     try:
-        return build_config(ai, [source_item(item) for item in items])
+        return build_config(ai, unique_sources(items))
     except ValueError as exc:
         raise DomainError(f"Horizon rejected these sources: {exc}") from exc
 

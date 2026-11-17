@@ -63,8 +63,26 @@
     const message = window.MastHeadKit.messageArea(M);
     const addButton = M.h('button', { type: 'button', class: 'btn primary', hidden: true }, 'Add the ticked sources');
     let rows = [];
+    // The same source found again (a second search, the same line pasted twice) is listed once,
+    // as the server keeps it once (horizon_setup.unique_sources).
+    const identity = (item) => {
+      if (!item.kind) return null;
+      const f = item.fields || {};
+      if (item.kind === 'rss') return `rss|${String(f.url || '').replace(/\/+$/, '').toLowerCase()}`;
+      const named = { ...f, subreddit: String(f.subreddit || '').replace(/^r\//i, ''), channel: String(f.channel || '').replace(/^@/, '') };
+      return [item.kind, named.owner, named.repo, named.username, named.subreddit, named.channel]
+        .map((part) => String(part || '').toLowerCase()).join('|');
+    };
     async function check(items) {
-      const fresh = items.map((item) => checkRow(M, api, item));
+      const known = new Set(mode === 'select' ? rows.map((r) => identity(r.item)).filter(Boolean) : []);
+      const newItems = items.filter((item) => {
+        const key = identity(item);
+        if (key === null) return true;
+        if (known.has(key)) return false;
+        known.add(key);
+        return true;
+      });
+      const fresh = newItems.map((item) => checkRow(M, api, item));
       rows = mode === 'select' ? [...rows, ...fresh] : fresh;
       list.replaceChildren(...rows.map((r) => r.row));
       addButton.hidden = mode === 'select';

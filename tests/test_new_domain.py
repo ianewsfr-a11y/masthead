@@ -125,6 +125,17 @@ def test_without_any_source_horizon_switches_hacker_news_on(client):
     assert written["sources"]["hackernews"]["enabled"] is True  # Horizon's own fallback
 
 
+def test_a_source_ticked_twice_is_read_once(client):
+    """Horizon's build_config keeps duplicates; the same source found by two searches is written once."""
+    feed = {"type": "rss", "config": {"name": "Feed", "url": "https://example.com/feed"}}
+    again = {"type": "rss", "config": {"name": "Same feed", "url": "https://EXAMPLE.com/feed/"}}
+    sub = {"type": "reddit_subreddit", "config": {"subreddit": "MBA"}}
+    answers = {**SETUP, "id": "twice", "sources": [feed, sub, again, {"type": "reddit_subreddit", "config": {"subreddit": "r/mba"}}]}
+    assert client.post("/api/new-domain", json=answers).status_code == 201
+    written = json.loads(get_domain("twice").config_path.read_text(encoding="utf-8"))
+    assert written == horizon_setup_of(answers, [feed, sub])
+
+
 def test_nothing_is_pre_filled_so_every_answer_is_needed(client):
     for missing in ("provider", "model", "languages"):
         body = {**SETUP, "id": f"no-{missing}", missing: "" if missing != "languages" else []}
